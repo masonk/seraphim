@@ -12,14 +12,23 @@ pub enum Player {
     White,
 }
 
+impl Player {
+    pub fn other(&self) -> Player {
+        match self {
+            &Player::Black => Player::White,
+            &Player::White => Player::Black,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Point {
+pub enum PointState {
     Black,
     White,
     Empty,
 }
 
-type Board19 = [Point; 361];
+type Board19 = [PointState; 361];
 
 pub struct State19 {
     board: Board19,
@@ -32,14 +41,30 @@ impl State19 {
         State19 {
             next: Player::White,
             previous: [None; 8],
-            board: [Point::Empty; 361],
+            board: [PointState::Empty; 361],
         }
     }
-    fn idx(&Pos(&r, &c): &Pos) -> usize {
-        (r as usize + (c as usize * 19))
+    fn idx(&Pos(r, c): &Pos) -> usize {
+        r as usize + c as usize * 19
     }
-    pub fn get(&self, pos: &Pos) -> &Point {
+    fn set(&mut self, pos: &Pos, point: PointState) {
+        self.board[State19::idx(pos)] = point;
+    }
+    pub fn get(&self, pos: &Pos) -> &PointState {
         &self.board[State19::idx(pos)]
+    }
+
+    pub fn play(&mut self, pos: &Pos) {
+        let point = match self.next {
+            Player::Black => PointState::Black,
+            Player::White => PointState::White,
+        };
+        self.set(pos, point);
+        self.next = self.next.other();
+    }
+
+    pub fn play_str(&mut self, pos: &str) {
+        self.play(&Pos::parse(pos));
     }
 }
 
@@ -97,16 +122,16 @@ impl fmt::Display for State19 {
             );
             f.write_str(&row)?;
             for j in 0..19 {
-                let pos = Pos(&i, &j);
+                let pos = Pos(i, j);
                 let point = self.get(&pos);
                 let val = match point {
-                    &Point::Black => " o",
-                    &Point::White => " x",
-                    &Point::Empty => " .",
+                    &PointState::Black => " o",
+                    &PointState::White => " x",
+                    &PointState::Empty => " .",
                 };
-                f.write_str(val);
+                f.write_str(val)?;
             }
-            f.write_str("\n");
+            f.write_str("\n")?;
         }
 
         f.write_str("")
