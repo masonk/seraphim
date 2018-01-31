@@ -1,0 +1,11 @@
+[package]
+name = "golden"
+version = "0.1.0"
+authors = ["Mason Kramer <mason.kramer@gmail.com>"]
+
+
+[dependencies.lazy_static]
+version = "0.1.1"
+
+[dependencies]
+left-pad = "1.0.0"
