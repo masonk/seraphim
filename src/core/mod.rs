@@ -5,7 +5,9 @@ pub mod pos;
 use std::fmt;
 use left_pad;
 use self::pos::Pos;
+use std::collections::HashMap;
 
+#[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Player {
     Black,
@@ -19,79 +21,147 @@ impl Player {
             &Player::White => Player::Black,
         }
     }
+
+    pub fn color(&self) -> Color {
+        match self {
+            &Player::Black => Color::Black,
+            &Player::White => Color::White,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PointState {
+pub enum Color {
     Black,
     White,
     Empty,
 }
 
-type Board19 = [PointState; 361];
+type Board19 = [Color; 361];
+
+fn hash(board: &Board19) -> Vec<u8> {
+    board.iter().map(|v| *v as u8).collect::<Vec<u8>>()
+}
 
 pub struct State19 {
     board: Board19,
     next: Player,
-    previous: [Option<Board19>; 8],
+    recent: [Board19; 8], // The most recent 8 prior states, For feeding to the neural net
+    komap: HashMap<Vec<u8>, bool>, // For detecting positional superkos
+    record: Vec<Turn>,    // All moves from the start of the game
+}
+
+pub enum IllegalMoveError {
+    PositionalSuperko,
+    Occupied(Color),
+}
+
+enum Turn {
+    Pass,
+    Of(Move),
+}
+struct Move {
+    who: Player,
+    pos: Pos,
 }
 
 impl State19 {
     pub fn new() -> Self {
         State19 {
-            next: Player::White,
-            previous: [None; 8],
-            board: [PointState::Empty; 361],
+            next: Player::Black,
+            recent: [[Color::Empty; 361]; 8], // todo: are these laid out contiguously?
+            board: [Color::Empty; 361],
+            komap: HashMap::new(),
+            record: vec![],
         }
     }
     fn idx(&Pos(r, c): &Pos) -> usize {
         r as usize + c as usize * 19
     }
-    fn set(&mut self, pos: &Pos, point: PointState) {
-        self.board[State19::idx(pos)] = point;
+    fn set(&mut self, pos: &Pos, state: Color) {
+        self.board[Self::idx(pos)] = state;
     }
-    pub fn get(&self, pos: &Pos) -> &PointState {
-        &self.board[State19::idx(pos)]
+    pub fn get(&self, pos: &Pos) -> &Color {
+        &self.board[Self::idx(pos)]
     }
 
-    pub fn play(&mut self, pos: &Pos) {
-        let point = match self.next {
-            Player::Black => PointState::Black,
-            Player::White => PointState::White,
-        };
+    pub fn play(&mut self, pos: &Pos) -> Result<(), IllegalMoveError> {
+        {
+            let cur = self.get(pos);
+            match cur {
+                &Color::Empty => {}
+                _ => return Err(IllegalMoveError::Occupied(*cur)),
+            }
+        }
+        let point = self.next.color();
         self.set(pos, point);
+        let kokey = hash(&self.board);
+        let prev;
+        {
+            match self.komap.get(&kokey) {
+                Some(_) => prev = true,
+                _ => prev = false,
+            }
+        }
+        if prev {
+            self.set(pos, Color::Empty);
+            return Err(IllegalMoveError::PositionalSuperko);
+        }
+
+        self.komap.insert(kokey, true);
         self.next = self.next.other();
+        // update the "recent states" buffers
+        for i in 0..8 {
+            if i >= self.record.len() {
+                break;
+            }
+            let mut board = self.recent[i];
+            if let &Turn::Of(Move {
+                ref who,
+                pos: ref p,
+            }) = &self.record[i]
+            {
+                board[Self::idx(p)] = who.color();
+            }
+        }
+
+        let mv = Turn::Of(Move {
+            who: self.next,
+            pos: pos.clone(),
+        });
+        self.record.push(mv);
+        Ok(())
     }
 
-    pub fn play_str(&mut self, pos: &str) {
-        self.play(&Pos::parse(pos));
+    pub fn play_str(&mut self, pos: &str) -> Result<(), IllegalMoveError> {
+        self.play(&Pos::parse(pos))
     }
 }
 
 /*
 Looks like this:
 
-     a b c d e f g h i j k l m n o p q r s t u v
-    --------------------------------------------
-19 | . . . . . . . . . . . . . . . . . . . . . .
-18 | . . . . . . . . . . . . . . . . . . . . . .
-17 | . . . . . . . . . . . . . . . . . . . . . .
-16 | . . . . . . . . . . . . . . . . . . . . . .
-15 | . . . . . . . . . . . . . . . . . . . . . .
-14 | . . . . . . . . . . . . . . . . . . . . . .
-13 | . . . . . . . . . . . . . . . . . . . . . .
-12 | . . . . . . . . . . . . . . . . . . . . . .
-11 | . . . . . . . . . . . . . . . . . . . . . .
-10 | . . . . . . . . . . . . . . . . . . . . . .
- 9 | . . . . . . . . . . . . . . . . . . . . . .
- 8 | . . . . . . . . . . . . . . . . . . . . . .
- 7 | . . . . . . . . . . . . . . . . . . . . . .
- 6 | . . . . . . . . . . . . . . . . . . . . . .
- 5 | . . . . . . . . . . . . . . . . . . . . . .
- 4 | . . . . . . . . . . . . . . . . . . . . . .
- 3 | . . . . . . . . . . . . . . . . . . . . . .
- 2 | . . . . . . . . . . . . . . . . . . . . . .
- 1 | . . . . . . . . . . . . . . . . . . . . . .
+     a b c d e f g h i j k l m n o p q r s
+    --------------------------------------
+19 | . . . . . . . . . . . . . . . . . . .
+18 | . . . . . . . . . . . . . . . . . . .
+17 | . . . . . . . . . . . . . . . . . . .
+16 | . . x . . . . . . . . . . . . . . . .
+15 | . . . . . . . . . . . . . . . . . . .
+14 | . . . . . . . . . . . . . . . . . . .
+13 | . . . . . . . . . . . . . . . . . . .
+12 | . . . . . . . . . . . . . . . . . . .
+11 | . . . . . . . . . . . . . . . . . . .
+10 | . . . . . . . . . . . . . . . . . . .
+ 9 | . . . . . . . . . . . . . . . . o . .
+ 8 | . . . . . . . . . . . . . . . . . . .
+ 7 | . . . . . . . . . . . . . . . . . . .
+ 6 | . . . . . . . . . . . . . . . . . . .
+ 5 | . . . . . . . . . . . . . . . . . . .
+ 4 | . . . . x . . . . . . . . . . o . . .
+ 3 | . . . . . . . . . . . . . . . . . . .
+ 2 | . . . . . . . . . . . . . . . . . . .
+ 1 | . . . . . . . . . . . . . . . . . . .
  
  */
 impl fmt::Display for State19 {
@@ -125,9 +195,9 @@ impl fmt::Display for State19 {
                 let pos = Pos(i, j);
                 let point = self.get(&pos);
                 let val = match point {
-                    &PointState::Black => " o",
-                    &PointState::White => " x",
-                    &PointState::Empty => " .",
+                    &Color::Black => " o",
+                    &Color::White => " x",
+                    &Color::Empty => " .",
                 };
                 f.write_str(val)?;
             }
