@@ -1,3 +1,5 @@
+#![feature(entry_and_modify)]
+
 /* Core defines fundamental data structures.
 
 Game state, and anything that would be part of a permanent record of a game belongs here. */
@@ -147,9 +149,7 @@ impl State19 {
         let neighbors = pos.neighbors().collect::<Vec<Pos>>();
         let allies = neighbors
             .iter()
-            .map(|p| (p, self.get(pos)))
-            .filter(|&(_, v)| v == color)
-            .map(|(p, _)| p)
+            .filter(|p| self.get(p) == color)
             .collect::<Vec<&Pos>>();
 
         let stoneidx = Self::idx(pos);
@@ -217,35 +217,36 @@ impl State19 {
 
         self.merge_groups(&self.next_player.color(), pos);
 
+        let groupids: Vec<usize>;
         {
-            let raw = self as *mut Self;
             // All enemy neighbors need to be checked for capture
-            unsafe {
-                let enemies = pos.neighbors()
-                    .map(|p| (p, (*raw).get(pos)))
-                    .filter(|&(_, v)| *v == (*raw).next_player.other().color());
+            let enemies = pos.neighbors()
+                .filter(|p| *self.get(p) == self.next_player.other().color());
 
-                let groupids = enemies
-                    .map(|(ref p, _)| (*raw).group_index.get(Self::idx(p)).unwrap())
-                    .unique();
+            groupids = enemies
+                .map(|p| self.group_index.get(Self::idx(&p)).unwrap())
+                .unique()
+                .map(|v| *v)
+                .collect::<Vec<usize>>();
+        }
+        println!("enemy group ids: {:?}", groupids);
+        println!("groups: {:?}", self.groups);
 
-                for id in groupids {
-                    let mut clear = true;
-                    for idx in (*raw).groups.get(*id).unwrap() {
-                        let empty = pos.neighbors()
-                            .map(|p| (*raw).get(pos))
-                            .any(|&c| c == Color::Empty);
-                        if empty {
-                            clear = false;
-                            break;
-                        }
-                    }
-                    if clear {
-                        (*raw).clear_group(*id);
-                    }
+        for id in groupids {
+            let mut clear = true;
+            for idx in self.groups.get(id).unwrap() {
+                let empty = pos.neighbors()
+                    .map(|p| &self.boards[0][*idx])
+                    .any(|&c| c == Color::Empty);
+                if empty {
+                    clear = false;
+                    break;
                 }
-                // find at least one neighbor that's Color::Empty
             }
+            if clear {
+                self.clear_group(id);
+            }
+            // find at least one neighbor that's Color::Empty
         }
 
         // This stone's group needs to be checked for suicide
@@ -346,5 +347,26 @@ impl fmt::Display for State19 {
         }
 
         f.write_str("")
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn captures_are_cleared() {
+        let moves = vec!["a1", "a2", "c9", "b1"];
+        let emoves = vec!["a2", "c9", "b1"];
+        let mut actual = State19::new();
+        let mut expected = State19::new();
+        for mv in moves {
+            actual.play_str(mv);
+        }
+        for mv in emoves {
+            expected.play_str(mv);
+        }
+        println!("{}\n\n{}", actual, expected);
+        assert_eq!(format!("\n{}\n", actual), format!("\n{}\n", expected));
     }
 }
