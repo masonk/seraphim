@@ -52,14 +52,14 @@ impl Pos19 {
         let mut vec = vec![];
 
         for o in [-1isize, 1].iter() {
-            let it = ((i as isize) + *o) as usize;
-            let jt = ((j as isize) + *o) as usize;
+            let it = ((i as isize) + *o) as isize;
+            let jt = ((j as isize) + *o) as isize;
 
             if it >= 0 && it < 19 {
-                vec.push(Pos19::from_coords(it, j));
+                vec.push(Pos19::from_coords(it as usize, j));
             }
             if jt >= 0 && jt < 19 {
-                vec.push(Pos19::from_coords(i, jt));
+                vec.push(Pos19::from_coords(i, jt as usize));
             }
         }
         vec.into_iter()

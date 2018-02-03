@@ -1,5 +1,3 @@
-#![feature(entry_and_modify)]
-
 /* Core defines fundamental data structures.
 
 Game state, and anything that would be part of a permanent record of a game belongs here. */
@@ -9,6 +7,7 @@ use left_pad;
 use self::pos::Pos19;
 use vec_map::VecMap;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use itertools::Itertools;
 
 #[repr(C)]
@@ -35,7 +34,7 @@ impl Player {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
     Black,
     White,
@@ -48,6 +47,7 @@ fn hash(board: &Board19) -> Vec<u8> {
     board.iter().map(|v| *v as u8).collect::<Vec<u8>>()
 }
 
+#[derive(Debug)]
 pub enum IllegalMoveError {
     PositionalSuperko,
     Occupied(Color),
@@ -58,19 +58,23 @@ pub enum Turn {
     Of(Pos19),
 }
 
-// A group of stones of a single color
-struct Group {
-    color: Color,
-    stones: Vec<Pos19>,
-}
-
-#[derive(Debug)]
-struct Score {
-    Black: f64,
-    White: f64
+#[derive(Debug, PartialEq)]
+pub struct Score {
+    pub black: f64,
+    pub white: f64,
 }
 /*
-The rules encoded here are the Tromp-Taylor rules, which is a formulation of the Chinese rules which makes it easy for a computer to deterministically score the game.
+The rules encoded here are the Tromp-Taylor rules, which is a formulation of the Chinese rules which makes it easy for a computer to deterministically score the game. 
+
+They:
+
+* Use area scoring. A player's final score is the number of his stones on the board plus the number of empty spaces that are only reachable from his color of stones.
+
+* Don't remove dead groups: players must play to kill all "dead" groups before passing. TODO: Add a dead group "marking and agreement" phase after the engine gets smart enough to know when a group is dead.
+
+* Enforce positional superko: the game state may never be repeated.
+
+* Allow suicide.
 
 https://en.wikibooks.org/wiki/Computer_Go/Tromp-Taylor_Rules
 
@@ -86,6 +90,9 @@ https://en.wikibooks.org/wiki/Computer_Go/Tromp-Taylor_Rules
 10. The player with the higher score at the end of the game is the winner. Equal scores result in a tie.
 
 TODO: Perf hacks:
+
+index empty groups? Or the edges of empty groups?
+    - this would make scoring faster since it'd be fast to see if an empty group reaches a color
 
 index liberties?
     - Is there an efficient way to merge two groups' liberties (any two groups that are merging due to a new placement share at least that one liberties at the placed stone, and might share more.)
@@ -105,6 +112,7 @@ pub struct State19 {
     // liberties: VecMap<usize>, // TODO: Maintain an index of how many liberties each group has. Indexed by group id.
     next_id: usize,
     komi: f64,
+    scored: [bool; 19 * 19], // At the end of the game, every stone has to be considered for scoring. After it's been considered we mark it as scored so we don't process it again
 }
 
 impl State19 {
@@ -119,6 +127,7 @@ impl State19 {
             // liberties: VecMap::with_capacity(19 * 19),
             next_id: 0,
             komi: 7.5,
+            scored: [false; 19 * 19],
         }
     }
 
@@ -139,7 +148,45 @@ impl State19 {
     pub fn get(&self, pos: &Pos19) -> &Color {
         self.get_idx(pos)
     }
-    pub fn score(&self) -> Score
+    pub fn score(&mut self) -> Score {
+        let mut black = 0.0;
+        let mut white = self.komi;
+        let self_ptr = self as *mut Self;
+        for (idx, color) in self.boards[0].iter().enumerate() {
+            if self.scored[idx] {
+                continue;
+            }
+            match color {
+                &Color::Black => black += 1.0,
+                &Color::White => white += 1.0,
+                &Color::Empty => {
+                    let mut group = HashSet::new();
+                    let mut reaches = HashSet::new();
+                    unsafe {
+                        (*self_ptr).sweep_group(
+                            &Color::Empty,
+                            &Pos19(idx),
+                            &mut group,
+                            &mut reaches,
+                        );
+                    }
+                    println!(
+                        "Swept empty group with {} points. It reached {:?}",
+                        group.len(),
+                        reaches
+                    );
+                    if reaches.len() == 1 {
+                        if reaches.contains(&Color::White) {
+                            white += group.len() as f64;
+                        } else {
+                            black += group.len() as f64;
+                        }
+                    }
+                }
+            }
+        }
+        Score { black, white }
+    }
     // Merge neighboring allied groups into one group, because the stone we're placing connects them all.
     // If 0 allied groups, start a new group that contains only this stone.
     // Returns the group id of the resultant merged group.
@@ -188,7 +235,33 @@ impl State19 {
         self.groups.get_mut(id).unwrap().clear();
     }
 
-    fn reaches_empty(&mut self, groupid: &usize) -> bool {
+    fn sweep_group(
+        &mut self,
+        color: &Color,
+        next: &Pos19,
+        same: &mut HashSet<usize>,
+        reachable: &mut HashSet<Color>,
+    ) {
+        // Find the extent of a group that contains some point by recursively expanding the members of the group. (Imagine clicking a box in minesweeper and having it fill out the group).
+        // In the process also find all the other colors that were reached.
+        let same_ptr = same as *const HashSet<usize>;
+        let self_ptr = self as *mut Self;
+        unsafe {
+            for n in next.neighbors().filter(|p| (*same_ptr).get(&p.0).is_none()) {
+                let neighboring_color = self.get(&n);
+                let Pos19(idx) = n;
+                if neighboring_color == color {
+                    same.insert(n.0);
+                    (*self_ptr).scored[idx] = true;
+                    (*self_ptr).sweep_group(color, &n, same, reachable);
+                } else {
+                    reachable.insert(*neighboring_color);
+                }
+            }
+        }
+    }
+
+    fn reaches_empty(&self, groupid: &usize) -> bool {
         let mut reaches = false;
         for idx in self.groups.get(*groupid).unwrap() {
             // print!("Does {} have any liberties?", Pos19(*idx));
@@ -249,33 +322,20 @@ impl State19 {
                 // println!("Board: after set, before clear:\n {}", self);
 
                 let selfid = self.merge_groups(&self.next_player.color(), pos);
+                let self_ptr = self as *mut Self;
 
-                let enemygroupids: Vec<usize>;
-                {
-                    // All enemy neighbors need to be checked for capture
-                    let enemies = pos.neighbors()
-                        .filter(|p| *self.get(p) == self.next_player.other().color());
-                    let &Pos19(idx) = pos;
+                let enemy_groups = pos.neighbors()
+                    .filter(|p| *self.get(p) == self.next_player.other().color())
+                    .map(|Pos19(eidx)| self.group_index.get(eidx).unwrap())
+                    .unique()
+                    .map(|v| *v);
 
-                    // let enemyvec = pos.neighbors()
-                    //     .filter(|p| *self.get(p) == self.next_player.other().color())
-                    //     .collect::<Vec<Pos19>>();
-                    // println!("Enemies: {:?}", enemyvec);
-
-                    enemygroupids = enemies
-                        .map(|Pos19(eidx)| self.group_index.get(eidx).unwrap())
-                        .unique()
-                        .map(|v| *v)
-                        .collect::<Vec<usize>>();
-                }
-                // info!(
-                //     "All groups: {:?}\nEnemy group ids: {:?}",
-                //     self.groups, enemygroupids
-                // );
-                for id in enemygroupids {
-                    let alive = self.reaches_empty(&id);
-                    if !alive {
-                        self.clear_group(id);
+                for id in enemy_groups {
+                    unsafe {
+                        let alive = self.reaches_empty(&id);
+                        if !alive {
+                            (*self_ptr).clear_group(id);
+                        }
                     }
                 }
                 // println!("Board: after set, after clear:\n {}", self);
@@ -385,18 +445,18 @@ impl fmt::Display for State19 {
 mod test {
     use super::*;
 
-    // #[test]
+    #[test]
     fn captures_are_cleared() {
         let moves = vec!["a1", "a2", "c9", "b1"];
         let emoves = vec!["a2", "c9", "b1"];
         let mut actual = State19::new();
         let mut expected = State19::new();
         for mv in moves {
-            actual.play_str(mv);
+            actual.play_str(mv).unwrap();
         }
-        expected.play(Turn::Pass);
+        expected.play(Turn::Pass).unwrap();
         for mv in emoves {
-            expected.play_str(mv);
+            expected.play_str(mv).unwrap();
         }
         println!("{}\n\n{}", actual, expected);
         assert_eq!(format!("\n{}\n", actual), format!("\n{}\n", expected));
@@ -412,13 +472,71 @@ mod test {
         let mut actual = State19::new();
         let mut expected = State19::new();
         for mv in moves.iter() {
-            actual.play_str(mv);
+            actual.play_str(mv).unwrap();
         }
 
         for mv in emoves {
-            expected.play(mv);
+            expected.play(mv).unwrap();
         }
         println!("{}\n\n{}", actual, expected);
         assert_eq!(format!("\n{}\n", actual), format!("\n{}\n", expected));
+    }
+
+    #[test]
+    fn basic_score() {
+        let moves = vec!["a2", "c9", "b1", "a 1"];
+        let mut actual = State19::new();
+        for mv in moves.iter() {
+            actual.play_str(mv).unwrap();
+        }
+        let actual_score = actual.score();
+
+        assert_eq!(
+            actual_score,
+            Score {
+                black: 2.0,
+                white: 1.0 + actual.komi,
+            },
+        );
+    }
+    #[test]
+    fn scoring_expands_around_a_wall() {
+        let black_moves = (1..19).map(|i| format!("d {}", i));
+        let white_moves = (1..19).map(|i| format!("l {}", i));
+        let moves = black_moves.zip(white_moves).flat_map(|(a, b)| vec![a, b]);
+
+        let mut actual = State19::new();
+        for mv in moves {
+            actual.play_str(&mv).unwrap();
+        }
+        let actual_score = actual.score();
+
+        assert_eq!(
+            actual_score,
+            Score {
+                black: 18.0,
+                white: 18.0 + actual.komi,
+            },
+        );
+    }
+    #[test]
+    fn scoring_counts_captured_territory() {
+        let black_moves = (1..20).map(|i| format!("d {}", i));
+        let white_moves = (1..20).map(|i| format!("l {}", i));
+        let moves = black_moves.zip(white_moves).flat_map(|(a, b)| vec![a, b]);
+
+        let mut actual = State19::new();
+        for mv in moves {
+            actual.play_str(&mv).unwrap();
+        }
+        let actual_score = actual.score();
+
+        assert_eq!(
+            actual_score,
+            Score {
+                black: (19.0 * 4.0),
+                white: (19.0 * 8.0) + actual.komi,
+            },
+        );
     }
 }
