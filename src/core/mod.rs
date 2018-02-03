@@ -64,6 +64,11 @@ struct Group {
     stones: Vec<Pos19>,
 }
 
+#[derive(Debug)]
+struct Score {
+    Black: f64,
+    White: f64
+}
 /*
 The rules encoded here are the Tromp-Taylor rules, which is a formulation of the Chinese rules which makes it easy for a computer to deterministically score the game.
 
@@ -99,6 +104,7 @@ pub struct State19 {
     groups: VecMap<Vec<usize>>, // Which stones each group owns. Indexed by group id.
     // liberties: VecMap<usize>, // TODO: Maintain an index of how many liberties each group has. Indexed by group id.
     next_id: usize,
+    komi: f64,
 }
 
 impl State19 {
@@ -112,6 +118,7 @@ impl State19 {
             groups: VecMap::with_capacity(19 * 19),
             // liberties: VecMap::with_capacity(19 * 19),
             next_id: 0,
+            komi: 7.5,
         }
     }
 
@@ -132,7 +139,7 @@ impl State19 {
     pub fn get(&self, pos: &Pos19) -> &Color {
         self.get_idx(pos)
     }
-
+    pub fn score(&self) -> Score
     // Merge neighboring allied groups into one group, because the stone we're placing connects them all.
     // If 0 allied groups, start a new group that contains only this stone.
     // Returns the group id of the resultant merged group.
