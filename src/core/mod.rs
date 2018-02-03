@@ -53,13 +53,9 @@ pub enum IllegalMoveError {
     Occupied(Color),
 }
 
-enum Turn {
+pub enum Turn {
     Pass,
-    Of(Move),
-}
-struct Move {
-    who: Player,
-    pos: Pos19,
+    Of(Pos19),
 }
 
 // A group of stones of a single color
@@ -137,10 +133,6 @@ impl State19 {
         self.get_idx(pos)
     }
 
-    fn clear(&mut self, &Move { ref who, ref pos }: &Move) -> u32 {
-        0
-    }
-
     // Merge neighboring allied groups into one group, because the stone we're placing connects them all.
     // If 0 allied groups, start a new group that contains only this stone.
     // Returns the group id of the resultant merged group.
@@ -185,116 +177,130 @@ impl State19 {
             // self.set_idx(idx, Color::Empty); // Borrow checker complains
             self.boards[0][*idx] = Color::Empty;
         }
+        println!("Claering {}", id);
         self.groups.get_mut(id).unwrap().clear();
     }
 
-    pub fn play(&mut self, pos: &Pos19) -> Result<(), IllegalMoveError> {
-        {
-            let cur = self.get(pos);
-            match cur {
-                &Color::Empty => {}
-                _ => return Err(IllegalMoveError::Occupied(cur.clone())),
+    fn reaches_empty(&mut self, groupid: &usize) -> bool {
+        let mut reaches = false;
+        for idx in self.groups.get(*groupid).unwrap() {
+            // print!("Does {} have any liberties?", Pos19(*idx));
+            let empty = Pos19(*idx)
+                .neighbors()
+                .map(|p| &self.boards[0][p.0])
+                .any(|&c| c == Color::Empty);
+
+            if empty {
+                // println!(" ... yes");
+                reaches = true;
+                break;
             }
+            // let neighbors = Pos19(*idx)
+            //     .neighbors()
+            //     .map(|p| &self.boards[0][p.0])
+            //     .map(|&c| c.clone())
+            //     .collect::<Vec<Color>>();
+
+            // println!(" ... no. (Found: {:?}", neighbors);
         }
-        let point = self.next_player.color();
-        self.set(pos, point);
-        let kokey = hash(&self.boards[0]);
-        let prev;
-        {
-            match self.komap.get(&kokey) {
-                Some(_) => prev = true,
-                _ => prev = false,
+        reaches
+    }
+
+    pub fn play(&mut self, turn: Turn) -> Result<(), IllegalMoveError> {
+        match &turn {
+            &Turn::Pass => {
+                self.record.push(turn);
+                self.next_player = self.next_player.other();
+                Ok(())
             }
-        }
-        if prev {
-            self.set(pos, Color::Empty);
-            return Err(IllegalMoveError::PositionalSuperko);
-        }
-
-        self.komap.insert(kokey, true);
-
-        // The stone is placed. Now update indexes and perform clearing.
-        println!("Board: after set, before clear:\n {}", self);
-
-        self.merge_groups(&self.next_player.color(), pos);
-
-        let enemygroupids: Vec<usize>;
-        {
-            // All enemy neighbors need to be checked for capture
-            let enemies = pos.neighbors()
-                .filter(|p| *self.get(p) == self.next_player.other().color());
-            let &Pos19(idx) = pos;
-
-            let enemyvec = pos.neighbors()
-                .filter(|p| *self.get(p) == self.next_player.other().color())
-                .collect::<Vec<Pos19>>();
-            println!("Enemies: {:?}", enemyvec);
-
-            enemygroupids = enemies
-                .map(|Pos19(eidx)| self.group_index.get(eidx).unwrap())
-                .unique()
-                .map(|v| *v)
-                .collect::<Vec<usize>>();
-        }
-        println!(
-            "All groups: {:?}\nEnemy group ids: {:?}",
-            self.groups, enemygroupids
-        );
-        for id in enemygroupids {
-            let mut clear = true;
-            for idx in self.groups.get(id).unwrap() {
-                print!("Does {} have any liberties?", Pos19(*idx));
-                let empty = Pos19(*idx)
-                    .neighbors()
-                    .map(|p| &self.boards[0][p.0])
-                    .any(|&c| c == Color::Empty);
-
-                if empty {
-                    println!(" ... yes");
-                    clear = false;
-                    break;
+            &Turn::Of(ref pos) => {
+                {
+                    let cur = self.get(pos);
+                    match cur {
+                        &Color::Empty => {}
+                        _ => return Err(IllegalMoveError::Occupied(cur.clone())),
+                    }
                 }
-                let neighbors = Pos19(*idx)
-                    .neighbors()
-                    .map(|p| &self.boards[0][p.0])
-                    .map(|&c| c.clone())
-                    .collect::<Vec<Color>>();
+                let point = self.next_player.color();
+                self.set(pos, point);
+                let kokey = hash(&self.boards[0]);
+                let prev;
+                {
+                    match self.komap.get(&kokey) {
+                        Some(_) => prev = true,
+                        _ => prev = false,
+                    }
+                }
+                if prev {
+                    self.set(pos, Color::Empty);
+                    return Err(IllegalMoveError::PositionalSuperko);
+                }
 
-                println!(" ... no. (Found: {:?}", neighbors);
-            }
-            if clear {
-                self.clear_group(id);
+                self.komap.insert(kokey, true);
+
+                // The stone is placed. Now update indexes and perform clearing.
+                // println!("Board: after set, before clear:\n {}", self);
+
+                let selfid = self.merge_groups(&self.next_player.color(), pos);
+
+                let enemygroupids: Vec<usize>;
+                {
+                    // All enemy neighbors need to be checked for capture
+                    let enemies = pos.neighbors()
+                        .filter(|p| *self.get(p) == self.next_player.other().color());
+                    let &Pos19(idx) = pos;
+
+                    // let enemyvec = pos.neighbors()
+                    //     .filter(|p| *self.get(p) == self.next_player.other().color())
+                    //     .collect::<Vec<Pos19>>();
+                    // println!("Enemies: {:?}", enemyvec);
+
+                    enemygroupids = enemies
+                        .map(|Pos19(eidx)| self.group_index.get(eidx).unwrap())
+                        .unique()
+                        .map(|v| *v)
+                        .collect::<Vec<usize>>();
+                }
+                // info!(
+                //     "All groups: {:?}\nEnemy group ids: {:?}",
+                //     self.groups, enemygroupids
+                // );
+                for id in enemygroupids {
+                    let alive = self.reaches_empty(&id);
+                    if !alive {
+                        self.clear_group(id);
+                    }
+                }
+                // println!("Board: after set, after clear:\n {}", self);
+                if !self.reaches_empty(&selfid) {
+                    // Stone was a suicide
+                    self.clear_group(selfid)
+                }
+
+                self.next_player = self.next_player.other();
+                // TODO: update the "recent states" buffers
+                // for i in 0..8 {
+                //     if i >= self.record.len() {
+                //         break;
+                //     }
+                //     let mut board = self.recent[i];
+                //     if let &Turn::Of(Move {
+                //         ref who,
+                //         pos: ref p,
+                //     }) = &self.record[i]
+                //     {
+                //         board[Self::idx(p)] = who.color();
+                //     }
+                // }
+
+                self.record.push(turn);
+                Ok(())
             }
         }
-        println!("Board: after set, after clear:\n {}", self);
-        // This stone's group needs to be checked for suicide
-
-        self.next_player = self.next_player.other();
-        // TODO: update the "recent states" buffers
-        // for i in 0..8 {
-        //     if i >= self.record.len() {
-        //         break;
-        //     }
-        //     let mut board = self.recent[i];
-        //     if let &Turn::Of(Move {
-        //         ref who,
-        //         pos: ref p,
-        //     }) = &self.record[i]
-        //     {
-        //         board[Self::idx(p)] = who.color();
-        //     }
-        // }
-
-        let mv = Turn::Of(Move {
-            who: self.next_player,
-            pos: pos.clone(),
-        });
-        self.record.push(mv);
-        Ok(())
     }
 
     pub fn play_str(&mut self, pos: &str) -> Result<(), IllegalMoveError> {
-        self.play(&Pos19::parse(pos))
+        self.play(Turn::Of(Pos19::parse(pos)))
     }
 }
 
@@ -372,7 +378,7 @@ impl fmt::Display for State19 {
 mod test {
     use super::*;
 
-    #[test]
+    // #[test]
     fn captures_are_cleared() {
         let moves = vec!["a1", "a2", "c9", "b1"];
         let emoves = vec!["a2", "c9", "b1"];
@@ -381,24 +387,29 @@ mod test {
         for mv in moves {
             actual.play_str(mv);
         }
-        // for mv in emoves {
-        //     expected.play_str(mv);
-        // }
-        // println!("{}\n\n{}", actual, expected);
-        // assert_eq!(format!("\n{}\n", actual), format!("\n{}\n", expected));
-    }
-
-    // #[test]
-    fn suicide_cleared() {
-        let moves = vec!["a1", "a2", "c9", "b1"];
-        let emoves = vec!["c9", "a2", "a 1", "b1"];
-        let mut actual = State19::new();
-        let mut expected = State19::new();
-        for mv in moves {
-            actual.play_str(mv);
-        }
+        expected.play(Turn::Pass);
         for mv in emoves {
             expected.play_str(mv);
+        }
+        println!("{}\n\n{}", actual, expected);
+        assert_eq!(format!("\n{}\n", actual), format!("\n{}\n", expected));
+    }
+
+    #[test]
+    fn suicide_cleared() {
+        let moves = vec!["a2", "c9", "b1", "a 1"];
+        let emoves = moves[0..3]
+            .iter()
+            .clone()
+            .map(|p| Turn::Of(Pos19::parse(p)));
+        let mut actual = State19::new();
+        let mut expected = State19::new();
+        for mv in moves.iter() {
+            actual.play_str(mv);
+        }
+
+        for mv in emoves {
+            expected.play(mv);
         }
         println!("{}\n\n{}", actual, expected);
         assert_eq!(format!("\n{}\n", actual), format!("\n{}\n", expected));
