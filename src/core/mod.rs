@@ -95,7 +95,7 @@ index empty groups? Or the edges of empty groups?
     - this would make scoring faster since it'd be fast to see if an empty group reaches a color
 
 index liberties?
-    - Is there an efficient way to merge two groups' liberties (any two groups that are merging due to a new placement share at least that one liberties at the placed stone, and might share more.)
+    - Is there an efficient way to merge two groups' liberties (any two groups that are merging due to a new placement share at least one liberty at the placed stone, and might share more.)
     - Is there an efficient way to update liberties on capture?
 
 don't hash positional superko?
@@ -170,11 +170,7 @@ impl State19 {
                             &mut scored,
                         );
                     }
-                    println!(
-                        "Swept empty group with {} points. It reached {:?}",
-                        group.len(),
-                        reaches
-                    );
+
                     if reaches.len() == 1 {
                         if reaches.contains(&Color::White) {
                             white += group.len() as f64;
@@ -311,9 +307,8 @@ impl State19 {
                 self.komap.insert(kokey, true);
 
                 // The stone is placed. Now update indexes and perform clearing.
-                // println!("Board: after set, before clear:\n {}", self);
 
-                let selfid = self.merge_groups(&self.next_player.color(), pos);
+                let this_group_id = self.merge_groups(&self.next_player.color(), pos);
                 let self_ptr = self as *mut Self;
 
                 let enemy_groups = pos.neighbors()
@@ -322,6 +317,8 @@ impl State19 {
                     .unique()
                     .map(|v| *v);
 
+                // Every enemy group that this stone touched had its liberties reduced
+                // Check them all for death
                 for id in enemy_groups {
                     unsafe {
                         let alive = self.reaches_empty(&id);
@@ -330,28 +327,12 @@ impl State19 {
                         }
                     }
                 }
-                // println!("Board: after set, after clear:\n {}", self);
-                if !self.reaches_empty(&selfid) {
-                    // Stone was a suicide
-                    self.clear_group(selfid)
+                if !self.reaches_empty(&this_group_id) {
+                    // Stone was a suicide, deprived its group of all liberties
+                    self.clear_group(this_group_id)
                 }
 
                 self.next_player = self.next_player.other();
-                // TODO: update the "recent states" buffers
-                // for i in 0..8 {
-                //     if i >= self.record.len() {
-                //         break;
-                //     }
-                //     let mut board = self.recent[i];
-                //     if let &Turn::Of(Move {
-                //         ref who,
-                //         pos: ref p,
-                //     }) = &self.record[i]
-                //     {
-                //         board[Self::idx(p)] = who.color();
-                //     }
-                // }
-
                 self.record.push(turn);
                 Ok(())
             }
@@ -363,32 +344,6 @@ impl State19 {
     }
 }
 
-/*
-Looks like this:
-
-     a b c d e f g h i j k l m n o p q r s
-    --------------------------------------
-19 | . . . . . . . . . . . . . . . . . . .
-18 | . . . . . . . . . . . . . . . . . . .
-17 | . . . . . . . . . . . . . . . . . . .
-16 | . . x . . . . . . . . . . . . . . . .
-15 | . . . . . . . . . . . . . . . . . . .
-14 | . . . . . . . . . . . . . . . . . . .
-13 | . . . . . . . . . . . . . . . . . . .
-12 | . . . . . . . . . . . . . . . . . . .
-11 | . . . . . . . . . . . . . . . . . . .
-10 | . . . . . . . . . . . . . . . . . . .
- 9 | . . . . . . . . . . . . . . . . o . .
- 8 | . . . . . . . . . . . . . . . . . . .
- 7 | . . . . . . . . . . . . . . . . . . .
- 6 | . . . . . . . . . . . . . . . . . . .
- 5 | . . . . . . . . . . . . . . . . . . .
- 4 | . . . . x . . . . . . . . . . o . . .
- 3 | . . . . . . . . . . . . . . . . . . .
- 2 | . . . . . . . . . . . . . . . . . . .
- 1 | . . . . . . . . . . . . . . . . . . .
- 
- */
 impl fmt::Display for State19 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         lazy_static! {
