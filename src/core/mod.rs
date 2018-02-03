@@ -6,7 +6,7 @@ Game state, and anything that would be part of a permanent record of a game belo
 pub mod pos;
 use std::fmt;
 use left_pad;
-use self::pos::Pos;
+use self::pos::Pos19;
 use vec_map::VecMap;
 use std::collections::HashMap;
 use itertools::Itertools;
@@ -59,13 +59,13 @@ enum Turn {
 }
 struct Move {
     who: Player,
-    pos: Pos,
+    pos: Pos19,
 }
 
 // A group of stones of a single color
 struct Group {
     color: Color,
-    stones: Vec<Pos>,
+    stones: Vec<Pos19>,
 }
 
 /*
@@ -90,7 +90,8 @@ index liberties?
     - Is there an efficient way to merge two groups' liberties (any two groups that are merging due to a new placement share at least that one liberties at the placed stone, and might share more.)
     - Is there an efficient way to update liberties on capture?
 
-change repr of Pos into a usize instead of a tuple
+don't hash positional superko?
+
 */
 
 pub struct State19 {
@@ -117,25 +118,23 @@ impl State19 {
             next_id: 0,
         }
     }
-    fn idx(&Pos(r, c): &Pos) -> usize {
-        r as usize + c as usize * 19
-    }
+
     fn get_next_id(&mut self) -> usize {
         let id = self.next_id;
         self.next_id += 1;
         id
     }
-    fn set_idx(&mut self, idx: &usize, state: Color) {
-        self.boards[0][*idx] = state;
+    fn set_idx(&mut self, &Pos19(idx): &Pos19, state: Color) {
+        self.boards[0][idx] = state;
     }
-    fn set(&mut self, pos: &Pos, state: Color) {
-        self.set_idx(&Self::idx(pos), state);
+    fn set(&mut self, pos: &Pos19, state: Color) {
+        self.set_idx(pos, state);
     }
-    pub fn get_idx(&self, idx: &usize) -> &Color {
-        &self.boards[0][*idx]
+    pub fn get_idx(&self, &Pos19(idx): &Pos19) -> &Color {
+        &self.boards[0][idx]
     }
-    pub fn get(&self, pos: &Pos) -> &Color {
-        self.get_idx(&Self::idx(pos))
+    pub fn get(&self, pos: &Pos19) -> &Color {
+        self.get_idx(pos)
     }
 
     fn clear(&mut self, &Move { ref who, ref pos }: &Move) -> u32 {
@@ -145,21 +144,22 @@ impl State19 {
     // Merge neighboring allied groups into one group, because the stone we're placing connects them all.
     // If 0 allied groups, start a new group that contains only this stone.
     // Returns the group id of the resultant merged group.
-    fn merge_groups(&mut self, color: &Color, pos: &Pos) -> usize {
-        let neighbors = pos.neighbors().collect::<Vec<Pos>>();
+    fn merge_groups(&mut self, color: &Color, pos: &Pos19) -> usize {
+        let neighbors = pos.neighbors().collect::<Vec<Pos19>>();
         let allies = neighbors
             .iter()
             .filter(|p| self.get(p) == color)
-            .collect::<Vec<&Pos>>();
-
-        let stoneidx = Self::idx(pos);
+            .collect::<Vec<&Pos19>>();
+        let &Pos19(stoneidx) = pos;
         let id: usize;
         if allies.len() > 0 {
             // merge all allied groups and the placed stone into the group with this id
-            id = *self.group_index.get(Self::idx(allies[0])).unwrap();
+            let &Pos19(idx) = allies[0];
+            id = *self.group_index.get(idx).unwrap();
 
             for ally in allies {
-                let gid = *self.group_index.get(Self::idx(ally)).unwrap();
+                let &Pos19(idx) = ally;
+                let gid = *self.group_index.get(idx).unwrap();
                 if gid != id {
                     let mut source = self.groups.remove(gid).unwrap();
                     for idx in source.iter() {
@@ -188,7 +188,7 @@ impl State19 {
         self.groups.get_mut(id).unwrap().clear();
     }
 
-    pub fn play(&mut self, pos: &Pos) -> Result<(), IllegalMoveError> {
+    pub fn play(&mut self, pos: &Pos19) -> Result<(), IllegalMoveError> {
         {
             let cur = self.get(pos);
             match cur {
@@ -214,41 +214,59 @@ impl State19 {
         self.komap.insert(kokey, true);
 
         // The stone is placed. Now update indexes and perform clearing.
+        println!("Board: after set, before clear:\n {}", self);
 
         self.merge_groups(&self.next_player.color(), pos);
 
-        let groupids: Vec<usize>;
+        let enemygroupids: Vec<usize>;
         {
             // All enemy neighbors need to be checked for capture
             let enemies = pos.neighbors()
                 .filter(|p| *self.get(p) == self.next_player.other().color());
+            let &Pos19(idx) = pos;
 
-            groupids = enemies
-                .map(|p| self.group_index.get(Self::idx(&p)).unwrap())
+            let enemyvec = pos.neighbors()
+                .filter(|p| *self.get(p) == self.next_player.other().color())
+                .collect::<Vec<Pos19>>();
+            println!("Enemies: {:?}", enemyvec);
+
+            enemygroupids = enemies
+                .map(|Pos19(eidx)| self.group_index.get(eidx).unwrap())
                 .unique()
                 .map(|v| *v)
                 .collect::<Vec<usize>>();
         }
-        println!("enemy group ids: {:?}", groupids);
-        println!("groups: {:?}", self.groups);
-
-        for id in groupids {
+        println!(
+            "All groups: {:?}\nEnemy group ids: {:?}",
+            self.groups, enemygroupids
+        );
+        for id in enemygroupids {
             let mut clear = true;
             for idx in self.groups.get(id).unwrap() {
-                let empty = pos.neighbors()
-                    .map(|p| &self.boards[0][*idx])
+                print!("Does {} have any liberties?", Pos19(*idx));
+                let empty = Pos19(*idx)
+                    .neighbors()
+                    .map(|p| &self.boards[0][p.0])
                     .any(|&c| c == Color::Empty);
+
                 if empty {
+                    println!(" ... yes");
                     clear = false;
                     break;
                 }
+                let neighbors = Pos19(*idx)
+                    .neighbors()
+                    .map(|p| &self.boards[0][p.0])
+                    .map(|&c| c.clone())
+                    .collect::<Vec<Color>>();
+
+                println!(" ... no. (Found: {:?}", neighbors);
             }
             if clear {
                 self.clear_group(id);
             }
-            // find at least one neighbor that's Color::Empty
         }
-
+        println!("Board: after set, after clear:\n {}", self);
         // This stone's group needs to be checked for suicide
 
         self.next_player = self.next_player.other();
@@ -276,7 +294,7 @@ impl State19 {
     }
 
     pub fn play_str(&mut self, pos: &str) -> Result<(), IllegalMoveError> {
-        self.play(&Pos::parse(pos))
+        self.play(&Pos19::parse(pos))
     }
 }
 
@@ -334,7 +352,7 @@ impl fmt::Display for State19 {
             );
             f.write_str(&row)?;
             for j in 0..19 {
-                let pos = Pos(i, j);
+                let pos = Pos19::from_coords(i, j);
                 let point = self.get(&pos);
                 let val = match point {
                     &Color::Black => " o",
@@ -358,6 +376,22 @@ mod test {
     fn captures_are_cleared() {
         let moves = vec!["a1", "a2", "c9", "b1"];
         let emoves = vec!["a2", "c9", "b1"];
+        let mut actual = State19::new();
+        let mut expected = State19::new();
+        for mv in moves {
+            actual.play_str(mv);
+        }
+        // for mv in emoves {
+        //     expected.play_str(mv);
+        // }
+        // println!("{}\n\n{}", actual, expected);
+        // assert_eq!(format!("\n{}\n", actual), format!("\n{}\n", expected));
+    }
+
+    // #[test]
+    fn suicide_cleared() {
+        let moves = vec!["a1", "a2", "c9", "b1"];
+        let emoves = vec!["c9", "a2", "a 1", "b1"];
         let mut actual = State19::new();
         let mut expected = State19::new();
         for mv in moves {
