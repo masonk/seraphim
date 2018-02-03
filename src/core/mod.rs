@@ -112,7 +112,6 @@ pub struct State19 {
     // liberties: VecMap<usize>, // TODO: Maintain an index of how many liberties each group has. Indexed by group id.
     next_id: usize,
     komi: f64,
-    scored: [bool; 19 * 19], // At the end of the game, every stone has to be considered for scoring. After it's been considered we mark it as scored so we don't process it again
 }
 
 impl State19 {
@@ -127,7 +126,6 @@ impl State19 {
             // liberties: VecMap::with_capacity(19 * 19),
             next_id: 0,
             komi: 7.5,
-            scored: [false; 19 * 19],
         }
     }
 
@@ -152,8 +150,9 @@ impl State19 {
         let mut black = 0.0;
         let mut white = self.komi;
         let self_ptr = self as *mut Self;
+        let mut scored = [false; 19 * 19]; // After a stone has been considered mark it as scored so we don't reconsider. Only used for the empty point "minesweeper" algorithm.
         for (idx, color) in self.boards[0].iter().enumerate() {
-            if self.scored[idx] {
+            if scored[idx] {
                 continue;
             }
             match color {
@@ -168,6 +167,7 @@ impl State19 {
                             &Pos19(idx),
                             &mut group,
                             &mut reaches,
+                            &mut scored,
                         );
                     }
                     println!(
@@ -241,6 +241,7 @@ impl State19 {
         next: &Pos19,
         same: &mut HashSet<usize>,
         reachable: &mut HashSet<Color>,
+        scored: &mut [bool; 19 * 19],
     ) {
         // Find the extent of a group that contains some point by recursively expanding the members of the group. (Imagine clicking a box in minesweeper and having it fill out the group).
         // In the process also find all the other colors that were reached.
@@ -252,8 +253,8 @@ impl State19 {
                 let Pos19(idx) = n;
                 if neighboring_color == color {
                     same.insert(n.0);
-                    (*self_ptr).scored[idx] = true;
-                    (*self_ptr).sweep_group(color, &n, same, reachable);
+                    scored[idx] = true;
+                    (*self_ptr).sweep_group(color, &n, same, reachable, scored);
                 } else {
                     reachable.insert(*neighboring_color);
                 }
@@ -264,24 +265,15 @@ impl State19 {
     fn reaches_empty(&self, groupid: &usize) -> bool {
         let mut reaches = false;
         for idx in self.groups.get(*groupid).unwrap() {
-            // print!("Does {} have any liberties?", Pos19(*idx));
             let empty = Pos19(*idx)
                 .neighbors()
                 .map(|p| &self.boards[0][p.0])
                 .any(|&c| c == Color::Empty);
 
             if empty {
-                // println!(" ... yes");
                 reaches = true;
                 break;
             }
-            // let neighbors = Pos19(*idx)
-            //     .neighbors()
-            //     .map(|p| &self.boards[0][p.0])
-            //     .map(|&c| c.clone())
-            //     .collect::<Vec<Color>>();
-
-            // println!(" ... no. (Found: {:?}", neighbors);
         }
         reaches
     }
