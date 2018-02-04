@@ -365,7 +365,7 @@ impl fmt::Display for State19 {
         f.write_str("\n")?;
         f.write_str(&HR)?;
         f.write_str("\n")?;
-        for i in (0..19).rev() {
+        for i in 0..19 {
             let row = format!(
                 "{} |",
                 left_pad::leftpad(format!("{}", i + 1), 2).to_owned()

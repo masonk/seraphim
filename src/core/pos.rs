@@ -8,18 +8,18 @@ use regex;
 pub struct Pos19(pub usize);
 
 impl Pos19 {
-    pub fn from_coords(r: usize, c: usize) -> Self {
-        Pos19(r + c * 19)
+    pub fn from_coords(c: usize, r: usize) -> Self {
+        Pos19(c + r * 19)
     }
 
     pub fn to_coords(&self) -> (usize, usize) {
-        // i = r + c * 19
-        // (i - r)/19 = c
-        // i - (c * 19) = r
+        // i = c + r * 19
+        // (i - c)/19 = r
+        // i - (r * 19) = c
         let &Pos19(i) = self;
-        let c = i / 19;
-        let r = i - (c * 19);
-        (r, c)
+        let r = i / 19;
+        let c = i - (r * 19);
+        (c, r)
     }
     pub fn parse(s: &str) -> Self {
         lazy_static! {
@@ -43,12 +43,12 @@ impl Pos19 {
 
         let rowidx = i8::from_str_radix(&cap[2], 10).unwrap() - 1;
         let colidx = COLMAP[&colchar];
-        Pos19::from_coords(rowidx as usize, colidx as usize)
+        Pos19::from_coords(colidx as usize, rowidx as usize)
     }
 
     // the cardinal neighbors of self
     pub fn neighbors(&self) -> impl ExactSizeIterator<Item = Pos19> {
-        let (i, j) = self.to_coords();
+        let (j, i) = self.to_coords();
         let mut vec = vec![];
 
         for o in [-1isize, 1].iter() {
@@ -56,10 +56,10 @@ impl Pos19 {
             let jt = ((j as isize) + *o) as isize;
 
             if it >= 0 && it < 19 {
-                vec.push(Pos19::from_coords(it as usize, j));
+                vec.push(Pos19::from_coords(j, it as usize));
             }
             if jt >= 0 && jt < 19 {
-                vec.push(Pos19::from_coords(i, jt as usize));
+                vec.push(Pos19::from_coords(jt as usize, i));
             }
         }
         vec.into_iter()
@@ -78,7 +78,7 @@ impl fmt::Display for Pos19 {
                 "abcdefghijklmnopqrs".chars().collect::<Vec<char>>()
             };
         }
-        let (row, col) = self.to_coords();
+        let (col, row) = self.to_coords();
         let c = CHARS[col];
         write!(f, "{} {}", c, row + 1)
     }
@@ -89,11 +89,14 @@ mod tests {
     use super::Pos19;
     #[test]
     fn display() {
-        let actual = format!("{}", Pos19::from_coords(13, 12));
-        assert_eq!(actual, "m 14");
+        let a2 = format!("{}", Pos19::from_coords(0, 1));
+        assert_eq!(a2, "a 2");
 
-        let a2 = format!("{}", Pos19::from_coords(1, 1));
-        assert_eq!(a2, "b 2");
+        let b2 = format!("{}", Pos19::from_coords(1, 1));
+        assert_eq!(b2, "b 2");
+
+        let m14 = format!("{}", Pos19::from_coords(12, 13));
+        assert_eq!(m14, "m 14");
 
         let a3 = format!("{}", Pos19::from_coords(0, 0));
         assert_eq!(a3, "a 1");
@@ -101,12 +104,12 @@ mod tests {
         let a4 = format!("{}", Pos19::from_coords(18, 18));
         assert_eq!(a4, "s 19");
 
-        let a5 = format!("{}", Pos19::from_coords(0, 18));
+        let a5 = format!("{}", Pos19::from_coords(18, 0));
         assert_eq!(a5, "s 1");
     }
     #[test]
     fn display_roundtrips() {
-        let expected = Pos19::from_coords(13, 12);
+        let expected = Pos19::from_coords(12, 13);
         let format = format!("{}", expected);
         let parse = Pos19::parse(&format);
         assert_eq!(parse, expected);
@@ -115,7 +118,7 @@ mod tests {
     #[test]
     fn a_parse() {
         let actual = Pos19::parse("e 9");
-        assert_eq!(actual, Pos19::from_coords(8, 4));
+        assert_eq!(actual, Pos19::from_coords(4, 8));
     }
 
     fn neighbors_exactly(pos: Pos19, expected: Vec<Pos19>) {
