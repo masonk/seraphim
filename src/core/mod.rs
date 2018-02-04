@@ -9,6 +9,7 @@ use vec_map::VecMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use itertools::Itertools;
+use regex;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,9 +54,40 @@ pub enum IllegalMoveError {
     Occupied(Color),
 }
 
+#[derive(Debug)]
 pub enum Turn {
     Pass,
     Of(Pos19),
+    Add(Color, Pos19),
+}
+impl Turn {
+    pub fn from_sgf(sgf: &str) -> Self {
+        lazy_static! {
+                static ref RE : regex::Regex = regex::Regex::new(r"([a-t]{2})").unwrap();
+                static ref CHARS: Vec<char> = {
+                    "abcdefghijklmnopqrs".chars().collect::<Vec<char>>()
+                  // 123456789
+                };
+                            static ref COLMAP: HashMap<char, usize> = {
+                let mut map = HashMap::new();
+                let pairs = (0..19).zip(CHARS.iter());
+                for (i, c) in pairs {
+                    map.insert(c.clone(), i);
+                }
+                map
+            };
+        }
+        let cap = RE.captures(sgf).unwrap();
+        if &cap[1] == "tt" {
+            return Turn::Pass;
+        }
+        let colchar = cap[1].chars().next().unwrap();
+        let rowchar = cap[1].chars().next().unwrap();
+
+        let col = COLMAP[&colchar];
+        let row = COLMAP[&rowchar];
+        Turn::Of(Pos19::from_coords(col, row))
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -281,6 +313,36 @@ impl State19 {
                 self.next_player = self.next_player.other();
                 Ok(())
             }
+            &Turn::Add(color, ref pos) => {
+                self.set(pos, color);
+
+                let this_group_id = self.merge_groups(&color, pos);
+
+                let self_ptr = self as *mut Self;
+
+                let enemy_groups = pos.neighbors()
+                    .filter(|p| *self.get(p) == self.next_player.other().color())
+                    .map(|Pos19(eidx)| self.group_index.get(eidx).unwrap())
+                    .unique()
+                    .map(|v| *v);
+
+                // Every enemy group that this stone touched had its liberties reduced
+                // Check them all for death
+                for id in enemy_groups {
+                    unsafe {
+                        let alive = self.reaches_empty(&id);
+                        if !alive {
+                            (*self_ptr).clear_group(id);
+                        }
+                    }
+                }
+                if !self.reaches_empty(&this_group_id) {
+                    // Stone was a suicide, deprived its group of all liberties
+                    self.clear_group(this_group_id)
+                }
+                self.record.push(turn);
+                Ok(())
+            }
             &Turn::Of(ref pos) => {
                 {
                     let cur = self.get(pos);
@@ -389,7 +451,7 @@ impl fmt::Display for State19 {
 }
 
 #[cfg(test)]
-mod test {
+mod basic {
     use super::*;
 
     #[test]
@@ -485,5 +547,45 @@ mod test {
                 white: (19.0 * 8.0) + actual.komi,
             },
         );
+    }
+}
+
+#[cfg(test)]
+mod sfg_replays {
+    use sgf;
+    use std::fs::File;
+    use std::io::BufReader;
+    use std::io::prelude::*;
+    use std::path::PathBuf;
+    use test::Bencher;
+    fn turns(node: &sgf::SgfNode) -> Vec<String> {
+        let mut vec = vec![];
+        _turns(node, &mut vec);
+        vec
+    }
+    fn _turns(node: &sgf::SgfNode, vec: &mut Vec<String>) {
+        vec.push(format!("{:?}", node));
+    }
+    #[bench]
+    fn replay_10_games(b: &mut Bencher) {
+        let jgdb = PathBuf::from("data/jgdb");
+        let mut testgames = jgdb.clone();
+        testgames.push("test.txt");
+        let filelist = File::open(testgames).unwrap();
+        let game_files = BufReader::new(filelist).lines().take(1);
+
+        for game in game_files {
+            let path = jgdb.join(PathBuf::from(game.unwrap()));
+            println!("====== {} ======", path.to_str().unwrap());
+
+            let mut file = File::open(path).unwrap();
+            let mut contents = String::new();
+            file.read_to_string(&mut contents).unwrap();
+
+            let game = sgf::sgf_node::SgfCollection::from_sgf(&contents).unwrap();
+            println!("{:?}", game);
+            println!("{:?}", turns(&game[0].children[0]));
+            println!("");
+        }
     }
 }

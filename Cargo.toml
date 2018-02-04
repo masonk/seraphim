@@ -2,8 +2,6 @@
 name = "golden"
 version = "0.1.0"
 authors = ["Mason Kramer <mason.kramer@gmail.com>"]
-build = "build.rs" # LALRPOP preprocessing
-
 
 [dependencies.lazy_static]
 version = "0.1.1"
@@ -14,10 +12,7 @@ regex = "0.2.0"
 clippy = { version = "*", optional = true }
 vec_map = "*"
 itertools = "0.7.3"
-lalrpop-util = "0.14.0"
-
-[build-dependencies.lalrpop]
-version = "0.14.0"
+sgf = "*"
 
 [profile.release]
 lto = true
