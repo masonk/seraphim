@@ -1,0 +1,54 @@
+
+use std::str::FromStr;
+use gosgf::*;
+use std::collections::HashMap;
+grammar;
+
+pub Collection: GoCollection = <GameTree*>;
+
+match {
+    r"\(",
+     r"\)",
+     r";" ,
+     r"\[",
+     r"\]",
+     r"[A-Z]"
+} else {
+    r".*"
+}
+GameTree: GameTree = {
+    r"\(" <sequence: Sequence> <children: GameTree*> r"\)" => {
+
+        let komi = f64::from_str(sequence[0].properties.get("KM").unwrap_or(&"0.0".to_owned())).unwrap();
+        let size = usize::from_str(sequence[0].properties.get("SZ").unwrap_or(&"19".to_owned())).unwrap();
+        let handicap = usize::from_str(sequence[0].properties.get("HA").unwrap_or(&"0".to_owned())).unwrap();
+
+        GameTree {
+            komi,
+            size,
+            handicap,
+            sequence,
+            children,
+        }
+    }
+};
+
+Sequence = <Node*>;
+
+Node: Node  = {
+    r";" <pairs: Property+> => {
+        let mut properties : HashMap<String, String> = HashMap::new();
+        for (k, v) in pairs {
+            properties.insert(k, v);
+        }
+        Node { properties }
+    } 
+};
+
+Property: (String, String) = {
+    <k: PropIdent> <v: PropValue> => (k, v)
+};
+PropIdent: String = <r"[A-Z]"+>;
+PropValue: String = r"\[" <r".*"> r"\]";
+
+
