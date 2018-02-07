@@ -96,7 +96,7 @@ pub struct Score {
     pub white: f64,
 }
 /*
-The rules encoded here are the Tromp-Taylor rules, which is a formulation of the Chinese rules which makes it easy for a computer to deterministically score the game. 
+The rules encoded here are the Tromp-Taylor rules, which is a formulation of the Chinese rules that makes it easy for a computer to deterministically score the game. 
 
 They:
 
@@ -121,14 +121,7 @@ https://en.wikibooks.org/wiki/Computer_Go/Tromp-Taylor_Rules
 9. A player's score is the number of points of her color, plus the number of empty points that reach only her color.
 10. The player with the higher score at the end of the game is the winner. Equal scores result in a tie.
 
-TODO: Perf hacks:
-
-index empty groups? Or the edges of empty groups?
-    - this would make scoring faster since it'd be fast to see if an empty group reaches a color
-
-index liberties?
-    - Is there an efficient way to merge two groups' liberties (any two groups that are merging due to a new placement share at least one liberty at the placed stone, and might share more.)
-    - Is there an efficient way to update liberties on capture?
+TODO:
 
 don't hash positional superko?
 
@@ -255,7 +248,7 @@ impl State19 {
             self.groups.insert(id, vec![stoneidx]);
             self.group_index.insert(stoneidx, id);
             let empty_neighbors = pos.neighbors()
-                .filter(|p| *self.get(p) == Color::Empty)
+                .filter(|p| self.get(p) == Color::Empty)
                 .map(|Pos19(p)| p)
                 .collect::<BTreeSet<usize>>();
 
@@ -361,20 +354,18 @@ impl State19 {
 
                 // merge all allied groups into one
                 let this_group_id = self.merge_groups(&self.next_player.color(), &pos);
-                // TODO: Merge liberties of merged groups
 
-                // Every group that counted this position as liberty stops counting it.
+                // Every group that counted this position as a liberty stops counting it.
                 let &Pos19(thisidx) = pos;
                 let enemygroups = self.nearby_groups(pos, self.next_player.other().color());
 
-                for groupid in enemygroups.into_iter() {
+                for groupid in enemygroups {
                     let mut libs = self.liberties.get_mut(groupid).unwrap();
                     libs.remove(&thisidx);
                     let mut group = self.groups.get(groupid).unwrap();
                     if libs.len() == 0 {
                         // enemy group is killed
                         self.clear_group(groupid);
-                        // TODO: Update liberty indexes for all cleared stones
                     }
                 }
 
@@ -423,7 +414,7 @@ impl fmt::Display for State19 {
             );
             f.write_str(&row)?;
             for j in 0..19 {
-                let pos = Pos19::from_coords(i, j);
+                let pos = Pos19::from_coords(j, i);
                 let point = self.get(&pos);
                 let val = match point {
                     Color::Black => " o",
