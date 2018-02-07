@@ -172,10 +172,10 @@ impl State19 {
     fn set(&mut self, pos: &Pos19, state: Color) {
         self.set_idx(pos, state);
     }
-    pub fn get_idx(&self, &Pos19(idx): &Pos19) -> &Color {
-        &self.boards[0][idx]
+    pub fn get_idx(&self, &Pos19(idx): &Pos19) -> Color {
+        self.boards[0][idx]
     }
-    pub fn get(&self, pos: &Pos19) -> &Color {
+    pub fn get(&self, pos: &Pos19) -> Color {
         self.get_idx(pos)
     }
     pub fn score(&mut self) -> Score {
@@ -222,7 +222,7 @@ impl State19 {
         let neighbors = pos.neighbors().collect::<Vec<Pos19>>();
         let allies = neighbors
             .iter()
-            .filter(|p| self.get(p) == color)
+            .filter(|p| self.get(p) == *color)
             .collect::<Vec<&Pos19>>();
         let &Pos19(stoneidx) = pos;
         let id: usize;
@@ -301,12 +301,12 @@ impl State19 {
             for n in next.neighbors().filter(|p| (*same_ptr).get(&p.0).is_none()) {
                 let neighboring_color = self.get(&n);
                 let Pos19(idx) = n;
-                if neighboring_color == color {
+                if neighboring_color == *color {
                     same.insert(n.0);
                     scored[idx] = true;
                     (*self_ptr).flood_fill_group(color, &n, same, reachable, scored);
                 } else {
-                    reachable.insert(*neighboring_color);
+                    reachable.insert(neighboring_color);
                 }
             }
         }
@@ -314,7 +314,7 @@ impl State19 {
 
     fn nearby_groups(&self, pos: &Pos19, color: Color) -> Vec<usize> {
         pos.neighbors()
-            .filter(move |p| *self.get(p) == color)
+            .filter(move |p| self.get(p) == color)
             .map(|Pos19(eidx)| self.group_index.get(eidx).unwrap().clone())
             .unique()
             .collect::<Vec<usize>>()
@@ -336,7 +336,7 @@ impl State19 {
                 {
                     let cur = self.get(pos);
                     match cur {
-                        &Color::Empty => {}
+                        Color::Empty => {}
                         _ => return Err(IllegalMoveError::Occupied(cur.clone())),
                     }
                 }
@@ -383,29 +383,6 @@ impl State19 {
                     // suicide
                 }
 
-                // // Next, if any enemy groups had their liberties reduced to 0
-                // // clear them.
-                // let enemy_groups = pos.neighbors()
-                //     .filter(|p| *self.get(p) == self.next_player.other().color())
-                //     .map(|Pos19(eidx)| self.group_index.get(eidx).unwrap())
-                //     .unique()
-                //     .map(|v| *v);
-
-                // // Every enemy group that this stone touched had its liberties reduced
-                // // Check them all for death
-                // for id in enemy_groups {
-                //     let alive = self.reaches_empty(&id);
-                //     if !alive {
-                //         unsafe {
-                //             (*self_ptr).clear_group(id);
-                //         }
-                //     }
-                // }
-                // if !self.reaches_empty(&this_group_id) {
-                //     // Stone was a suicide, deprived its group of all liberties
-                //     self.clear_group(this_group_id)
-                // }
-
                 self.next_player = self.next_player.other();
                 self.record.push(turn);
                 Ok(())
@@ -449,9 +426,9 @@ impl fmt::Display for State19 {
                 let pos = Pos19::from_coords(i, j);
                 let point = self.get(&pos);
                 let val = match point {
-                    &Color::Black => " o",
-                    &Color::White => " x",
-                    &Color::Empty => " .",
+                    Color::Black => " o",
+                    Color::White => " x",
+                    Color::Empty => " .",
                 };
                 f.write_str(val)?;
             }
