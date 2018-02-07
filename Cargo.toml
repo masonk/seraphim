@@ -12,7 +12,6 @@ regex = "0.2.0"
 clippy = { version = "*", optional = true }
 vec_map = "*"
 itertools = "0.7.3"
-sgf = "*"
 
 [profile.release]
 lto = true

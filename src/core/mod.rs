@@ -7,7 +7,7 @@ use left_pad;
 use self::pos::Pos19;
 use vec_map::VecMap;
 use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use itertools::Itertools;
 use regex;
 
@@ -35,7 +35,7 @@ impl Player {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Color {
     Black,
     White,
@@ -141,7 +141,7 @@ pub struct State19 {
     record: Vec<Turn>,             // All moves from the start of the game. Used for serialization.
     group_index: VecMap<usize>, // Which group each stone on the board belongs to. Indexed by board position. Meaningless if the position is Empty.
     groups: VecMap<Vec<usize>>, // Which stones each group owns. Indexed by group id.
-    // liberties: VecMap<usize>, // TODO: Maintain an index of how many liberties each group has. Indexed by group id.
+    liberties: VecMap<BTreeSet<usize>>, // All of the liberties that a group has
     next_id: usize,
     komi: f64,
 }
@@ -155,7 +155,7 @@ impl State19 {
             komap: HashMap::with_capacity(19 * 19),
             group_index: VecMap::with_capacity(19 * 19),
             groups: VecMap::with_capacity(19 * 19),
-            // liberties: VecMap::with_capacity(19 * 19),
+            liberties: VecMap::with_capacity(19 * 19),
             next_id: 0,
             komi: 7.5,
         }
@@ -191,10 +191,10 @@ impl State19 {
                 &Color::Black => black += 1.0,
                 &Color::White => white += 1.0,
                 &Color::Empty => {
-                    let mut group = HashSet::new();
-                    let mut reaches = HashSet::new();
+                    let mut group = BTreeSet::new();
+                    let mut reaches = BTreeSet::new();
                     unsafe {
-                        (*self_ptr).sweep_group(
+                        (*self_ptr).flood_fill_group(
                             &Color::Empty,
                             &Pos19(idx),
                             &mut group,
@@ -241,6 +241,10 @@ impl State19 {
                     }
                     let mut destination = self.groups.get_mut(id).unwrap();
                     destination.append(&mut source);
+
+                    let mut liberties = self.liberties.remove(gid).unwrap();
+                    let mut dest_liberties = self.liberties.get_mut(id).unwrap();
+                    dest_liberties.append(&mut liberties);
                 }
             }
             let destination = self.groups.get_mut(id).unwrap();
@@ -250,6 +254,12 @@ impl State19 {
             id = self.get_next_id();
             self.groups.insert(id, vec![stoneidx]);
             self.group_index.insert(stoneidx, id);
+            let empty_neighbors = pos.neighbors()
+                .filter(|p| *self.get(p) == Color::Empty)
+                .map(|Pos19(p)| p)
+                .collect::<BTreeSet<usize>>();
+
+            self.liberties.insert(id, empty_neighbors);
         }
         id
     }
@@ -259,21 +269,33 @@ impl State19 {
             // self.set_idx(idx, Color::Empty); // Borrow checker complains
             self.boards[0][*idx] = Color::Empty;
         }
-        println!("Claering {}", id);
+        let self_ptr = self as *mut Self;
+        for idx in self.groups.get(id).unwrap() {
+            let neighboring_stones = Pos19(*idx)
+                .neighbors()
+                .filter(|n| self.get(n).clone() != Color::Empty);
+            for Pos19(stone) in neighboring_stones {
+                let groupid = self.group_index.get(stone).unwrap().clone();
+                unsafe {
+                    let mut liberties = (*self_ptr).liberties.get_mut(groupid).unwrap();
+                    liberties.insert(*idx);
+                }
+            }
+        }
         self.groups.get_mut(id).unwrap().clear();
     }
 
-    fn sweep_group(
+    fn flood_fill_group(
         &mut self,
         color: &Color,
         next: &Pos19,
-        same: &mut HashSet<usize>,
-        reachable: &mut HashSet<Color>,
+        same: &mut BTreeSet<usize>,      // all the points in this group
+        reachable: &mut BTreeSet<Color>, // all the other colors we reached while filling
         scored: &mut [bool; 19 * 19],
     ) {
         // Find the extent of a group that contains some point by recursively expanding the members of the group. (Imagine clicking a box in minesweeper and having it fill out the group).
         // In the process also find all the other colors that were reached.
-        let same_ptr = same as *const HashSet<usize>;
+        let same_ptr = same as *const BTreeSet<usize>;
         let self_ptr = self as *mut Self;
         unsafe {
             for n in next.neighbors().filter(|p| (*same_ptr).get(&p.0).is_none()) {
@@ -282,7 +304,7 @@ impl State19 {
                 if neighboring_color == color {
                     same.insert(n.0);
                     scored[idx] = true;
-                    (*self_ptr).sweep_group(color, &n, same, reachable, scored);
+                    (*self_ptr).flood_fill_group(color, &n, same, reachable, scored);
                 } else {
                     reachable.insert(*neighboring_color);
                 }
@@ -290,60 +312,27 @@ impl State19 {
         }
     }
 
-    fn reaches_empty(&self, groupid: &usize) -> bool {
-        let mut reaches = false;
-        for idx in self.groups.get(*groupid).unwrap() {
-            let empty = Pos19(*idx)
-                .neighbors()
-                .map(|p| &self.boards[0][p.0])
-                .any(|&c| c == Color::Empty);
-
-            if empty {
-                reaches = true;
-                break;
-            }
-        }
-        reaches
+    fn nearby_groups(&self, pos: &Pos19, color: Color) -> Vec<usize> {
+        pos.neighbors()
+            .filter(move |p| *self.get(p) == color)
+            .map(|Pos19(eidx)| self.group_index.get(eidx).unwrap().clone())
+            .unique()
+            .collect::<Vec<usize>>()
     }
 
     pub fn play(&mut self, turn: Turn) -> Result<(), IllegalMoveError> {
-        match &turn {
-            &Turn::Pass => {
+        match turn {
+            Turn::Pass => {
                 self.record.push(turn);
                 self.next_player = self.next_player.other();
                 Ok(())
             }
-            &Turn::Add(color, ref pos) => {
+            Turn::Add(color, ref pos) => {
                 self.set(pos, color);
-
-                let this_group_id = self.merge_groups(&color, pos);
-
-                let self_ptr = self as *mut Self;
-
-                let enemy_groups = pos.neighbors()
-                    .filter(|p| *self.get(p) == self.next_player.other().color())
-                    .map(|Pos19(eidx)| self.group_index.get(eidx).unwrap())
-                    .unique()
-                    .map(|v| *v);
-
-                // Every enemy group that this stone touched had its liberties reduced
-                // Check them all for death
-                for id in enemy_groups {
-                    unsafe {
-                        let alive = self.reaches_empty(&id);
-                        if !alive {
-                            (*self_ptr).clear_group(id);
-                        }
-                    }
-                }
-                if !self.reaches_empty(&this_group_id) {
-                    // Stone was a suicide, deprived its group of all liberties
-                    self.clear_group(this_group_id)
-                }
                 self.record.push(turn);
                 Ok(())
             }
-            &Turn::Of(ref pos) => {
+            Turn::Of(ref pos) => {
                 {
                     let cur = self.get(pos);
                     match cur {
@@ -355,14 +344,14 @@ impl State19 {
                 self.set(pos, point);
                 let kokey = hash(&self.boards[0]);
                 let prev;
-                {
-                    match self.komap.get(&kokey) {
-                        Some(_) => prev = true,
-                        _ => prev = false,
-                    }
+
+                match self.komap.get(&kokey) {
+                    Some(_) => prev = true,
+                    _ => prev = false,
                 }
+
                 if prev {
-                    self.set(pos, Color::Empty);
+                    self.set(&pos, Color::Empty);
                     return Err(IllegalMoveError::PositionalSuperko);
                 }
 
@@ -370,29 +359,52 @@ impl State19 {
 
                 // The stone is placed. Now update indexes and perform clearing.
 
-                let this_group_id = self.merge_groups(&self.next_player.color(), pos);
-                let self_ptr = self as *mut Self;
+                // merge all allied groups into one
+                let this_group_id = self.merge_groups(&self.next_player.color(), &pos);
+                // TODO: Merge liberties of merged groups
 
-                let enemy_groups = pos.neighbors()
-                    .filter(|p| *self.get(p) == self.next_player.other().color())
-                    .map(|Pos19(eidx)| self.group_index.get(eidx).unwrap())
-                    .unique()
-                    .map(|v| *v);
+                // Every group that counted this position as liberty stops counting it.
+                let &Pos19(thisidx) = pos;
+                let enemygroups = self.nearby_groups(pos, self.next_player.other().color());
 
-                // Every enemy group that this stone touched had its liberties reduced
-                // Check them all for death
-                for id in enemy_groups {
-                    unsafe {
-                        let alive = self.reaches_empty(&id);
-                        if !alive {
-                            (*self_ptr).clear_group(id);
-                        }
+                for groupid in enemygroups.into_iter() {
+                    let mut libs = self.liberties.get_mut(groupid).unwrap();
+                    libs.remove(&thisidx);
+                    let mut group = self.groups.get(groupid).unwrap();
+                    if libs.len() == 0 {
+                        // enemy group is killed
+                        self.clear_group(groupid);
+                        // TODO: Update liberty indexes for all cleared stones
                     }
                 }
-                if !self.reaches_empty(&this_group_id) {
-                    // Stone was a suicide, deprived its group of all liberties
-                    self.clear_group(this_group_id)
+
+                if self.liberties.get(this_group_id).unwrap().len() == 0 {
+                    self.clear_group(this_group_id);
+                    // suicide
                 }
+
+                // // Next, if any enemy groups had their liberties reduced to 0
+                // // clear them.
+                // let enemy_groups = pos.neighbors()
+                //     .filter(|p| *self.get(p) == self.next_player.other().color())
+                //     .map(|Pos19(eidx)| self.group_index.get(eidx).unwrap())
+                //     .unique()
+                //     .map(|v| *v);
+
+                // // Every enemy group that this stone touched had its liberties reduced
+                // // Check them all for death
+                // for id in enemy_groups {
+                //     let alive = self.reaches_empty(&id);
+                //     if !alive {
+                //         unsafe {
+                //             (*self_ptr).clear_group(id);
+                //         }
+                //     }
+                // }
+                // if !self.reaches_empty(&this_group_id) {
+                //     // Stone was a suicide, deprived its group of all liberties
+                //     self.clear_group(this_group_id)
+                // }
 
                 self.next_player = self.next_player.other();
                 self.record.push(turn);
@@ -472,6 +484,25 @@ mod basic {
     }
 
     #[test]
+    fn captures_free_liberties() {
+        let moves = vec!["a1", "a2", "c9", "b1"];
+        let emoves = vec!["a2", "c9", "b1"];
+        let mut actual = State19::new();
+        let mut expected = State19::new();
+        for mv in moves {
+            actual.play_str(mv).unwrap();
+        }
+        expected.play(Turn::Pass).unwrap();
+        for mv in emoves {
+            expected.play_str(mv).unwrap();
+        }
+        let Pos19(a2_usize) = Pos19::parse("a2");
+        let a2_group = actual.group_index.get(a2_usize).unwrap().clone();
+        let a2_liberties = actual.liberties.get(a2_group).unwrap();
+        assert_eq!(a2_liberties.len(), 3);
+    }
+
+    #[test]
     fn suicide_cleared() {
         let moves = vec!["a2", "c9", "b1", "a 1"];
         let emoves = moves[0..3]
@@ -520,6 +551,7 @@ mod basic {
         }
         let actual_score = actual.score();
 
+        println!("{}", actual);
         assert_eq!(
             actual_score,
             Score {
@@ -539,6 +571,7 @@ mod basic {
             actual.play_str(&mv).unwrap();
         }
         let actual_score = actual.score();
+        println!("{}", actual);
 
         assert_eq!(
             actual_score,
@@ -550,42 +583,42 @@ mod basic {
     }
 }
 
-#[cfg(test)]
-mod sfg_replays {
-    use sgf;
-    use std::fs::File;
-    use std::io::BufReader;
-    use std::io::prelude::*;
-    use std::path::PathBuf;
-    use test::Bencher;
-    fn turns(node: &sgf::SgfNode) -> Vec<String> {
-        let mut vec = vec![];
-        _turns(node, &mut vec);
-        vec
-    }
-    fn _turns(node: &sgf::SgfNode, vec: &mut Vec<String>) {
-        vec.push(format!("{:?}", node));
-    }
-    #[bench]
-    fn replay_10_games(b: &mut Bencher) {
-        let jgdb = PathBuf::from("data/jgdb");
-        let mut testgames = jgdb.clone();
-        testgames.push("test.txt");
-        let filelist = File::open(testgames).unwrap();
-        let game_files = BufReader::new(filelist).lines().take(1);
+// #[cfg(test)]
+// mod sfg_replays {
+//     use sgf;
+//     use std::fs::File;
+//     use std::io::BufReader;
+//     use std::io::prelude::*;
+//     use std::path::PathBuf;
+//     use test::Bencher;
+//     fn turns(node: &sgf::SgfNode) -> Vec<String> {
+//         let mut vec = vec![];
+//         _turns(node, &mut vec);
+//         vec
+//     }
+//     fn _turns(node: &sgf::SgfNode, vec: &mut Vec<String>) {
+//         vec.push(format!("{}", node));
+//     }
+//     #[bench]
+//     fn replay_10_games(b: &mut Bencher) {
+//         let jgdb = PathBuf::from("data/jgdb");
+//         let mut testgames = jgdb.clone();
+//         testgames.push("test.txt");
+//         let filelist = File::open(testgames).unwrap();
+//         let game_files = BufReader::new(filelist).lines().take(1);
 
-        for game in game_files {
-            let path = jgdb.join(PathBuf::from(game.unwrap()));
-            println!("====== {} ======", path.to_str().unwrap());
+//         for game in game_files {
+//             let path = jgdb.join(PathBuf::from(game.unwrap()));
+//             println!("====== {} ======", path.to_str().unwrap());
 
-            let mut file = File::open(path).unwrap();
-            let mut contents = String::new();
-            file.read_to_string(&mut contents).unwrap();
+//             let mut file = File::open(path).unwrap();
+//             let mut contents = String::new();
+//             file.read_to_string(&mut contents).unwrap();
 
-            let game = sgf::sgf_node::SgfCollection::from_sgf(&contents).unwrap();
-            println!("{:?}", game);
-            println!("{:?}", turns(&game[0].children[0]));
-            println!("");
-        }
-    }
-}
+//             let game = sgf::sgf_node::SgfCollection::from_sgf(&contents).unwrap();
+//             println!("{:?}", game);
+//             println!("{:?}", turns(&game[0].children[0]));
+//             println!("");
+//         }
+//     }
+// }

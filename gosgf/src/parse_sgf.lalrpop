@@ -12,7 +12,7 @@ match {
      r";" ,
      r"\[",
      r"\]",
-     r"[A-Z]"
+    r"[A-Z]+"
 } else {
     r".*"
 }
@@ -48,7 +48,7 @@ Node: Node  = {
 Property: (String, String) = {
     <k: PropIdent> <v: PropValue> => (k, v)
 };
-PropIdent: String = <r"[A-Z]"+>;
-PropValue: String = r"\[" <r".*"> r"\]";
+PropIdent = <r"[A-Z]+">;
+PropValue = r"\[" <r".*"> r"\]";
 
 
