@@ -1,24 +1,29 @@
 use std::collections::HashMap;
 pub type GoCollection = Vec<GameTree>;
 
+#[derive(Debug)]
 pub struct Point(pub char, pub char);
 
+#[derive(Debug)]
 pub enum PointColor {
     Black,
     White,
     Empty,
 }
 
+#[derive(Debug)]
 pub enum PlayerColor {
     Black,
     White,
 }
 
+#[derive(Debug)]
 pub struct Stone {
     color: PointColor,
     point: Point,
 }
 
+#[derive(Debug)]
 pub enum Move {
     /* 
     From the implementation guide (http://www.red-bean.com/sgf/ff5/m_vs_ax.htm), referencing the spec (http://www.red-bean.com/sgf/go.html#types)
@@ -35,14 +40,15 @@ pub enum Move {
     Add(Stone),
     SetMoveNumber(isize),
 }
+#[derive(Debug)]
 pub struct GameTree {
-    komi: f64,
-    size: usize, // e.g. 19
-    handicap: usize,
-    sequence: Vec<Node>,
-    children: Vec<GameTree>,
+    pub komi: f64,
+    pub size: usize, // e.g. 19
+    pub handicap: usize,
+    pub sequence: Vec<Node>,
+    pub children: Vec<GameTree>,
 }
-
+#[derive(Debug)]
 pub struct Node {
     pub properties: HashMap<String, String>, // all raw prop parses for this node
 }

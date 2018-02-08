@@ -975,7 +975,7 @@ fn __action5<
     (_, v, _): (usize, &'input str, usize),
 ) -> (String, String)
 {
-    (k, v)
+    (k.to_string(), v.to_string())
 }
 
 #[allow(unused_variables)]

@@ -46,9 +46,7 @@ Node: Node  = {
 };
 
 Property: (String, String) = {
-    <k: PropIdent> <v: PropValue> => (k, v)
+    <k: PropIdent> <v: PropValue> => (k.to_string(), v.to_string())
 };
 PropIdent = <r"[A-Z]+">;
 PropValue = r"\[" <r".*"> r"\]";
-
-
