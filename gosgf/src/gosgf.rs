@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::iter;
 pub type GoCollection = Vec<GameTree>;
 
 #[derive(Debug)]
@@ -40,7 +39,7 @@ pub enum Move {
     Add (resp. clear) black/white stones to the board. This can be used to set up positions or problems. Adding (resp. clearing) is done by 'overwriting' the given point with black/white/empty stones. It doesn't matter what was there before. Adding a stone must not trigger any rule specific actions, e.g. in Go GM[1]: no prisoners nor any other captures (e.g. suicide). Thus it's possible to create illegal board positions. */
     Add(Stone),
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GameTree {
     pub komi: f64,
     pub size: usize, // e.g. 19
@@ -116,7 +115,7 @@ impl GameTree {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Node {
     pub properties: HashMap<String, String>, // all raw prop parses for this node
 }

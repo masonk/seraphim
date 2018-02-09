@@ -585,7 +585,7 @@ mod basic {
 }
 
 #[cfg(test)]
-mod sfg_replays {
+mod sgf_replays {
     use std::fs::File;
     use std::io::BufReader;
     use std::io::prelude::*;
@@ -597,12 +597,12 @@ mod sfg_replays {
 
     #[test]
     fn game95_throws_no_errors() {
-        do_one(PathBuf::from("data/jgdb/./sgf/test/0000/0000095.sgf")).unwrap();
+        do_one(PathBuf::from("data/jgdb/./sgf/test/0000/00000095.sgf")).unwrap();
     }
 
     #[test]
     fn game189_has_6_handicap() {
-        let mut file = File::open("data/jgdb/./sgf/test/0000/00000189.sgf").expect(&format!(
+        let file = File::open("data/jgdb/./sgf/test/0000/00000189.sgf").expect(&format!(
             "Couldn't open data/jgdb/./sgf/test/0000/00000189.sgf"
         ));
 
@@ -649,7 +649,7 @@ mod sfg_replays {
     fn game_248_has_superko() {
         let path = PathBuf::from("data/jgdb/./sgf/test/0000/00000248.sgf");
 
-        let mut file = File::open(path.clone()).expect(&format!("Couldn't open path {:?}", path));
+        let file = File::open(path.clone()).expect(&format!("Couldn't open path {:?}", path));
 
         let mut buf = String::new();
         BufReader::new(file).read_to_string(&mut buf).unwrap();
@@ -713,7 +713,7 @@ mod sfg_replays {
 
         let mut buf = String::new();
         let res = BufReader::new(file).read_to_string(&mut buf);
-        if let Err(err) = res {
+        if let Err(_) = res {
             return Ok(());
             // return Err(format!("{:?}", err));
         }
@@ -755,62 +755,47 @@ mod sfg_replays {
     }
 
     #[bench]
-    fn replay_1000_games(b: &mut Bencher) {
-        let jgdb = PathBuf::from("data/jgdb");
-        let filefilename = "data/jgdb/all.txt";
+    fn replay_30_games(b: &mut Bencher) {
+        lazy_static! {
+            static ref PARSES : Vec<(gosgf::GameTree, Vec<Turn>)> = {
+                let mut parses = vec![];
+                let jgdb = PathBuf::from("data/jgdb");
+                let filefilename = "data/jgdb/all.txt";
 
-        let filefile = File::open(filefilename).expect("Couldn't open filefile");
-        for fname in BufReader::new(filefile).lines().take(10) {
-            let path = jgdb.join(PathBuf::from(fname.unwrap()));
-            do_one_bench(b, path).unwrap();
-        }
-    }
+                let filefile = File::open(filefilename).expect("Couldn't open filefile");
+                for fname in BufReader::new(filefile).lines().take(30) {
+                    let path = jgdb.join(PathBuf::from(fname.unwrap()));
 
-    fn do_one_bench(b: &mut Bencher, path: PathBuf) -> Result<(), String> {
-        let file = File::open(path.clone()).expect(&format!("Couldn't open path {:?}", path));
+                    let file = File::open(path.clone()).expect(&format!("Couldn't open path {:?}", path));
 
-        let mut buf = String::new();
-        BufReader::new(file).read_to_string(&mut buf).unwrap();
-
-        match gosgf::parse_sgf::parse_Collection(&buf) {
-            Ok(parse) => {
-                let mut board = State19::init_from_sgf(&parse[0]);
-                let turns = parse[0]
-                    .main_line()
-                    .into_iter()
-                    .map(|sgfmove| Turn::from_sgf(sgfmove))
-                    .collect::<Vec<Turn>>();
-
-                let mut ret: Result<(), String> = Ok(());
-                b.iter(|| {
-                    for turn in &turns {
-                        match board.play(turn.clone()) {
-                            Err(err) => {
-                                println!("----------------------------------------------------");
-                                println!("{}", path.to_string_lossy());
-                                println!("Move error {:?} for move {:?}", err, turn);
-                                // println!("{:?}", parse[0]);
-                                println!("{}", board);
-                                println!("{}", board.serialize());
-                                println!("----------------------------------------------------");
-
-                                ret = Err(format!("Move error {:?} for move {:?}", err, turn));
-                                break;
-                            }
-                            _ => {}
+                    let mut buf = String::new();
+                    if let Ok(_) = BufReader::new(file).read_to_string(&mut buf) {
+                        if let Ok(parse) = gosgf::parse_sgf::parse_Collection(&buf) {
+                            let turns = parse[0]
+                                .main_line()
+                                .into_iter()
+                                .map(|sgfmove| Turn::from_sgf(sgfmove))
+                                .collect::<Vec<Turn>>();
+                            parses.push((parse[0].clone(), turns));
                         }
                     }
-                });
-            }
-            Err(err) => {
-                println!("----------------------------------------------------");
-                println!("{}", path.to_string_lossy());
-                println!("parse error {:?}", err);
-                println!("----------------------------------------------------");
-                return Err(format!("parse error {:?}", err));
-            }
+                }
+                parses
+            };
         }
-        Ok(())
+
+        for &(ref gametree, ref turns) in PARSES.iter() {
+            b.iter(|| {
+                let mut board = State19::init_from_sgf(&gametree);
+                for turn in turns {
+                    match board.play(turn.clone()) {
+                        Err(_) => break,
+                        _ => {}
+                    }
+                }
+                board
+            });
+        }
     }
 
 }

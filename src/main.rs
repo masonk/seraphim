@@ -1,9 +1,9 @@
-extern crate golden;
 extern crate gosgf;
+extern crate seraph;
 extern crate serde;
 extern crate serde_json;
 
-use golden::core;
+use seraph::core;
 use std::path::PathBuf;
 use std::fs::File;
 use std::io::prelude::*;
