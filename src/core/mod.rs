@@ -647,6 +647,18 @@ mod sfg_replays {
     }
 
     #[test]
+    fn game189_has_6_handicap() {
+        let mut file = File::open("data/jgdb/./sgf/test/0000/00000189.sgf").expect(&format!(
+            "Couldn't open data/jgdb/./sgf/test/0000/00000189.sgf"
+        ));
+
+        let mut buf = String::new();
+        BufReader::new(file).read_to_string(&mut buf).unwrap();
+
+        let parse = gosgf::parse_sgf::parse_Collection(&buf).unwrap();
+        assert_eq!(parse[0].handicap, 6);
+    }
+    #[test]
     fn game189_throws_no_errors() {
         do_one(PathBuf::from("data/jgdb/./sgf/test/0000/00000189.sgf")).unwrap();
     }
@@ -723,7 +735,8 @@ mod sfg_replays {
                     .into_iter()
                     .map(|sgfmove| Turn::from_sgf(sgfmove))
                     .collect::<Vec<Turn>>();
-                println!("Playing {} turns", turns.len());
+
+                println!("{:?}", turns);
                 for (i, turn) in turns.iter().enumerate() {
                     println!("{}. {:?}", i + 1, turn);
                     println!("{}", board);

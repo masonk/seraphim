@@ -22,8 +22,20 @@ GameTree: GameTree = {
 
         let komi = f64::from_str(sequence[0].properties.get("KM").unwrap_or(&"0.0".to_owned())).unwrap();
         let size = usize::from_str(sequence[0].properties.get("SZ").unwrap_or(&"19".to_owned())).unwrap();
-        let handicap = usize::from_str(sequence[0].properties.get("HA").unwrap_or(&"0".to_owned())).unwrap();
+        
+        let handicap;
+        {
+            let mut handistr = String::from("0");
+            for node in &sequence {
+                if let Some(ha) = node.properties.get("HA") {
+                    handistr = ha.to_string();
+                    break;
+                }
+            }
 
+            handicap =  usize::from_str(&handistr).unwrap();
+        }
+        
         GameTree {
             komi,
             size,
