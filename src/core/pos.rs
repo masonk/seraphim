@@ -1,7 +1,8 @@
 use std::fmt;
 use std::collections::HashMap;
 use regex;
-#[derive(Clone, PartialEq, Eq, Hash)]
+
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 // Displayed as cR, e.g., a 13,
 // but in code designated as row, col
 // rows and cols are INDEXED FROM ZERO
@@ -79,6 +80,9 @@ impl Pos19 {
             }
         }
         vec.into_iter()
+    }
+    pub fn pretty(&self) -> String {
+        format!("{}", self)
     }
 }
 impl fmt::Debug for Pos19 {

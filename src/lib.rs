@@ -13,3 +13,8 @@ extern crate left_pad;
 extern crate regex;
 extern crate test;
 extern crate vec_map;
+
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde_json;

@@ -9,12 +9,11 @@ use vec_map::VecMap;
 use std::collections::HashMap;
 use std::collections::BTreeSet;
 use itertools::Itertools;
-use regex;
 use gosgf;
 use gosgf::Move as SgfMove;
 use gosgf::PointColor as SgfColor;
 use gosgf::Stone as SgfStone;
-
+use serde_json;
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Player {
@@ -39,7 +38,7 @@ impl Player {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Color {
     Black,
     White,
@@ -58,7 +57,7 @@ pub enum IllegalMoveError {
     Occupied(Color),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Turn {
     Pass,
     Of(Pos19),
@@ -81,6 +80,11 @@ impl Turn {
             ),
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TurnList {
+    list: Vec<Turn>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -119,7 +123,6 @@ TODO:
 don't hash positional superko?
 
 */
-
 pub struct State19 {
     next_player: Player,
     boards: [Board19; 9], // The most recent 9 board states states. Zeroth board is the current state. This unorthodox layout is how the net likes to feed.
@@ -133,6 +136,10 @@ pub struct State19 {
 }
 
 impl State19 {
+    pub fn serialize(&self) -> String {
+        let moves = serde_json::to_string_pretty(&self.record).unwrap();
+        moves
+    }
     pub fn new() -> Self {
         State19 {
             next_player: Player::Black,
@@ -146,7 +153,16 @@ impl State19 {
             komi: 7.5,
         }
     }
-
+    pub fn init_from_sgf(tree: &gosgf::GameTree) -> Self {
+        let mut board = Self::new();
+        board.komi = tree.komi;
+        board.next_player = if tree.handicap == 0 {
+            Player::Black
+        } else {
+            Player::White
+        };
+        board
+    }
     fn get_next_id(&mut self) -> usize {
         let id = self.next_id;
         self.next_id += 1;
@@ -236,6 +252,18 @@ impl State19 {
             let destination = self.groups.get_mut(id).unwrap();
             destination.push(stoneidx);
             self.group_index.insert(stoneidx, id);
+
+            let empty_neighbors = pos.neighbors()
+                .filter(|p| self.get(p) == Color::Empty)
+                .map(|Pos19(p)| p)
+                .collect::<BTreeSet<usize>>();
+            let mut dest_liberties = self.liberties.get_mut(id).unwrap();
+
+            for lib in empty_neighbors {
+                dest_liberties.insert(lib);
+            }
+
+            dest_liberties.remove(&stoneidx);
         } else {
             id = self.get_next_id();
             self.groups.insert(id, vec![stoneidx]);
@@ -332,6 +360,8 @@ impl State19 {
                 let kokey = hash(&self.boards[0]);
                 let prev;
 
+                let badpos = Pos19::parse("s 12");
+
                 match self.komap.get(&kokey) {
                     Some(_) => prev = true,
                     _ => prev = false,
@@ -348,15 +378,59 @@ impl State19 {
 
                 // merge all allied groups into one
                 let this_group_id = self.merge_groups(&self.next_player.color(), &pos);
+                if this_group_id == 12 {
+                    let mut these_liberties = self.liberties.get_mut(this_group_id).unwrap();
+                    println!(
+                        "libs after merge_groups: {:?}",
+                        these_liberties
+                            .iter()
+                            .map(|v| Pos19(*v).pretty())
+                            .collect::<Vec<String>>(),
+                    );
+                }
+                if *pos == badpos {
+                    println!("The s12 groupid: {}", this_group_id);
+                }
 
                 // Every group that counted this position as a liberty stops counting it.
                 let &Pos19(thisidx) = pos;
                 let enemygroups = self.nearby_groups(pos, self.next_player.other().color());
 
+                if *pos == badpos {
+                    println!("enemy groupids: {:?}", enemygroups);
+                }
                 for groupid in enemygroups {
                     let mut libs = self.liberties.get_mut(groupid).unwrap();
+
+                    if *pos == badpos || groupid == 12 {
+                        println!(
+                            "libs before remove: {:?}",
+                            libs.iter()
+                                .map(|v| Pos19(*v).pretty())
+                                .collect::<Vec<String>>(),
+                        );
+                        println!(
+                            "Enemies in group {}: {:?}",
+                            groupid,
+                            self.groups
+                                .get(groupid)
+                                .unwrap()
+                                .iter()
+                                .map(|v| Pos19(*v).pretty())
+                                .collect::<Vec<String>>()
+                        );
+                    }
                     libs.remove(&thisidx);
-                    let mut group = self.groups.get(groupid).unwrap();
+                    if *pos == badpos || groupid == 12 {
+                        println!(
+                            "libs after remove: {:?} (removed: {})",
+                            libs.iter()
+                                .map(|v| Pos19(*v).pretty())
+                                .collect::<Vec<String>>(),
+                            Pos19(thisidx).pretty()
+                        );
+                        println!("{} liberties for {}", libs.len(), groupid);
+                    }
                     if libs.len() == 0 {
                         // enemy group is killed
                         self.clear_group(groupid);
@@ -377,6 +451,16 @@ impl State19 {
 
     pub fn play_str(&mut self, pos: &str) -> Result<(), IllegalMoveError> {
         self.play(Turn::Of(Pos19::parse(pos)))
+    }
+}
+
+impl fmt::Debug for State19 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self);
+        write!(f, "group_index: {:?}\n", self.group_index);
+        write!(f, "groups: {:?}\n", self.groups);
+        write!(f, "liberties: {:?}\n", self.liberties);
+        write!(f, "next_id: {}\n", self.next_id)
     }
 }
 
@@ -547,40 +631,187 @@ mod basic {
 
 #[cfg(test)]
 mod sfg_replays {
-    use sgf;
     use std::fs::File;
     use std::io::BufReader;
     use std::io::prelude::*;
     use std::path::PathBuf;
     use test::Bencher;
-    fn turns(node: &sgf::SgfNode) -> Vec<String> {
-        let mut vec = vec![];
-        _turns(node, &mut vec);
-        vec
+    use super::*;
+    use serde_json;
+    use serde;
+    use gosgf;
+
+    #[test]
+    fn game95_throws_no_errors() {
+        do_one(PathBuf::from("data/jgdb/./sgf/test/0000/0000095.sgf")).unwrap();
     }
-    fn _turns(node: &sgf::SgfNode, vec: &mut Vec<String>) {
-        vec.push(format!("{}", node));
+
+    #[test]
+    fn game189_throws_no_errors() {
+        do_one(PathBuf::from("data/jgdb/./sgf/test/0000/00000189.sgf")).unwrap();
     }
-    #[bench]
-    fn replay_10_games(b: &mut Bencher) {
+
+    #[test]
+    fn game95_matches_expectation() {
+        let moves = File::open("src/core/test/game95_moves.json").unwrap();
+        let parse: Vec<Turn> = serde_json::from_reader(moves).unwrap();
+        let mut expectation = String::new();
+        BufReader::new(File::open("src/core/test/game95_expectation").unwrap())
+            .read_to_string(&mut expectation)
+            .unwrap();
+
+        let mut game = State19::new();
+        game.next_player = Player::White;
+        for turn in parse {
+            println!("{:?}", turn);
+            game.play(turn);
+            println!("{}", game);
+        }
+        let actual = format!("{}", game);
+        println!("{}", actual);
+        println!("{}", expectation);
+
+        assert_eq!(actual, expectation);
+    }
+
+    #[test]
+    fn game189_matches_expectation() {
+        let moves = File::open("src/core/test/game189_moves.json").unwrap();
+        let parse: Vec<Turn> = serde_json::from_reader(moves).unwrap();
+        let mut expectation = String::new();
+        BufReader::new(File::open("src/core/test/game189_expectation").unwrap())
+            .read_to_string(&mut expectation)
+            .unwrap();
+
+        let mut game = State19::new();
+        game.next_player = Player::White;
+        for turn in parse {
+            println!("{:?}", turn);
+            game.play(turn).unwrap();
+            println!("{}", game);
+        }
+        let actual = format!("{}", game);
+        println!("{}", actual);
+        println!("{}", expectation);
+
+        // assert_eq!(actual, expectation);
+    }
+
+    #[test]
+    fn many_sgf_games_no_illegal_move_errors() {
         let jgdb = PathBuf::from("data/jgdb");
-        let mut testgames = jgdb.clone();
-        testgames.push("test.txt");
-        let filelist = File::open(testgames).unwrap();
-        let game_files = BufReader::new(filelist).lines().take(1);
+        let filefilename = "data/jgdb/all.txt";
 
-        for game in game_files {
-            let path = jgdb.join(PathBuf::from(game.unwrap()));
-            println!("====== {} ======", path.to_str().unwrap());
-
-            let mut file = File::open(path).unwrap();
-            let mut contents = String::new();
-            file.read_to_string(&mut contents).unwrap();
-
-            let game = sgf::sgf_node::SgfCollection::from_sgf(&contents).unwrap();
-            println!("{:?}", game);
-            println!("{:?}", turns(&game[0].children[0]));
-            println!("");
+        let filefile = File::open(filefilename).expect("Couldn't open filefile");
+        for fname in BufReader::new(filefile).lines().take(10000) {
+            let path = jgdb.join(PathBuf::from(fname.unwrap()));
+            do_one(path).unwrap();
         }
     }
+
+    fn do_one(path: PathBuf) -> Result<(), String> {
+        let mut file = File::open(path.clone()).expect(&format!("Couldn't open path {:?}", path));
+
+        let mut buf = String::new();
+        BufReader::new(file).read_to_string(&mut buf).unwrap();
+
+        match gosgf::parse_sgf::parse_Collection(&buf) {
+            Ok(parse) => {
+                let mut board = State19::init_from_sgf(&parse[0]);
+                let turns = parse[0]
+                    .main_line()
+                    .into_iter()
+                    .map(|sgfmove| Turn::from_sgf(sgfmove))
+                    .collect::<Vec<Turn>>();
+                println!("Playing {} turns", turns.len());
+                for (i, turn) in turns.iter().enumerate() {
+                    println!("{}. {:?}", i + 1, turn);
+                    println!("{}", board);
+
+                    match board.play(turn.clone()) {
+                        Err(err) => {
+                            println!("----------------------------------------------------");
+                            println!("{}", path.to_string_lossy());
+                            println!("Move error {:?} for move {:?}", err, turn);
+                            // println!("{:?}", parse[0]);
+                            println!("{}", board);
+                            println!("{}", board.serialize());
+                            println!("----------------------------------------------------");
+
+                            return Err(format!("Move error {:?} for move {:?}", err, turn));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Err(err) => {
+                println!("----------------------------------------------------");
+                println!("{}", path.to_string_lossy());
+                println!("parse error {:?}", err);
+                println!("----------------------------------------------------");
+                // return Err(format!("parse error {:?}", err));
+            }
+        }
+        Ok(())
+    }
+
+    #[bench]
+    fn replay_1000_games(b: &mut Bencher) {
+        let jgdb = PathBuf::from("data/jgdb");
+        let filefilename = "data/jgdb/all.txt";
+
+        let filefile = File::open(filefilename).expect("Couldn't open filefile");
+        for fname in BufReader::new(filefile).lines().take(10) {
+            let path = jgdb.join(PathBuf::from(fname.unwrap()));
+            do_one_bench(b, path);
+        }
+    }
+
+    fn do_one_bench(b: &mut Bencher, path: PathBuf) -> Result<(), String> {
+        let mut file = File::open(path.clone()).expect(&format!("Couldn't open path {:?}", path));
+
+        let mut buf = String::new();
+        BufReader::new(file).read_to_string(&mut buf).unwrap();
+
+        match gosgf::parse_sgf::parse_Collection(&buf) {
+            Ok(parse) => {
+                let mut board = State19::init_from_sgf(&parse[0]);
+                let turns = parse[0]
+                    .main_line()
+                    .into_iter()
+                    .map(|sgfmove| Turn::from_sgf(sgfmove))
+                    .collect::<Vec<Turn>>();
+
+                let mut ret: Result<(), String> = Ok(());
+                b.iter(|| {
+                    for turn in &turns {
+                        match board.play(turn.clone()) {
+                            Err(err) => {
+                                println!("----------------------------------------------------");
+                                println!("{}", path.to_string_lossy());
+                                println!("Move error {:?} for move {:?}", err, turn);
+                                // println!("{:?}", parse[0]);
+                                println!("{}", board);
+                                println!("{}", board.serialize());
+                                println!("----------------------------------------------------");
+
+                                ret = Err(format!("Move error {:?} for move {:?}", err, turn));
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                });
+            }
+            Err(err) => {
+                println!("----------------------------------------------------");
+                println!("{}", path.to_string_lossy());
+                println!("parse error {:?}", err);
+                println!("----------------------------------------------------");
+                return Err(format!("parse error {:?}", err));
+            }
+        }
+        Ok(())
+    }
+
 }
