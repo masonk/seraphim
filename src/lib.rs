@@ -5,6 +5,7 @@
 #![feature(test)]
 
 pub mod core;
+extern crate gosgf;
 extern crate itertools;
 #[macro_use]
 extern crate lazy_static;

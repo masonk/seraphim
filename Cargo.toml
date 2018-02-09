@@ -13,6 +13,9 @@ clippy = { version = "*", optional = true }
 vec_map = "*"
 itertools = "0.7.3"
 
+[dependencies.gosgf]
+path = "gosgf"
+
 [profile.release]
 lto = true
 

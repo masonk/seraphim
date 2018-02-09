@@ -10,6 +10,6 @@ fn main() {
     let game = File::open(fname).unwrap();
     let mut buf = String::new();
     BufReader::new(game).read_to_string(&mut buf).unwrap();
-    let parse = parse_sgf::parse_Collection(&buf);
-    println!("{:?}", parse);
+    let parse = parse_sgf::parse_Collection(&buf).unwrap();
+    println!("{:?}", parse[0].main_line());
 }

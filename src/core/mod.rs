@@ -10,6 +10,10 @@ use std::collections::HashMap;
 use std::collections::BTreeSet;
 use itertools::Itertools;
 use regex;
+use gosgf;
+use gosgf::Move as SgfMove;
+use gosgf::PointColor as SgfColor;
+use gosgf::Stone as SgfStone;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,32 +65,21 @@ pub enum Turn {
     Add(Color, Pos19),
 }
 impl Turn {
-    pub fn from_sgf(sgf: &str) -> Self {
-        lazy_static! {
-                static ref RE : regex::Regex = regex::Regex::new(r"([a-t]{2})").unwrap();
-                static ref CHARS: Vec<char> = {
-                    "abcdefghijklmnopqrs".chars().collect::<Vec<char>>()
-                  // 123456789
-                };
-                            static ref COLMAP: HashMap<char, usize> = {
-                let mut map = HashMap::new();
-                let pairs = (0..19).zip(CHARS.iter());
-                for (i, c) in pairs {
-                    map.insert(c.clone(), i);
-                }
-                map
-            };
+    pub fn from_sgf(sgf: SgfMove) -> Self {
+        match sgf {
+            SgfMove::Pass => Turn::Pass,
+            SgfMove::Of(SgfStone { point, .. }) => {
+                Turn::Of(Pos19::from_sgf_coords(point.0, point.1))
+            }
+            SgfMove::Add(SgfStone { color, point }) => Turn::Add(
+                match color {
+                    SgfColor::Black => Color::Black,
+                    SgfColor::White => Color::White,
+                    SgfColor::Empty => Color::Empty,
+                },
+                Pos19::from_sgf_coords(point.0, point.1),
+            ),
         }
-        let cap = RE.captures(sgf).unwrap();
-        if &cap[1] == "tt" {
-            return Turn::Pass;
-        }
-        let colchar = cap[1].chars().next().unwrap();
-        let rowchar = cap[1].chars().next().unwrap();
-
-        let col = COLMAP[&colchar];
-        let row = COLMAP[&rowchar];
-        Turn::Of(Pos19::from_coords(col, row))
     }
 }
 
@@ -322,6 +315,7 @@ impl State19 {
             }
             Turn::Add(color, ref pos) => {
                 self.set(pos, color);
+                self.merge_groups(&self.next_player.color(), pos);
                 self.record.push(turn);
                 Ok(())
             }
@@ -551,42 +545,42 @@ mod basic {
     }
 }
 
-// #[cfg(test)]
-// mod sfg_replays {
-//     use sgf;
-//     use std::fs::File;
-//     use std::io::BufReader;
-//     use std::io::prelude::*;
-//     use std::path::PathBuf;
-//     use test::Bencher;
-//     fn turns(node: &sgf::SgfNode) -> Vec<String> {
-//         let mut vec = vec![];
-//         _turns(node, &mut vec);
-//         vec
-//     }
-//     fn _turns(node: &sgf::SgfNode, vec: &mut Vec<String>) {
-//         vec.push(format!("{}", node));
-//     }
-//     #[bench]
-//     fn replay_10_games(b: &mut Bencher) {
-//         let jgdb = PathBuf::from("data/jgdb");
-//         let mut testgames = jgdb.clone();
-//         testgames.push("test.txt");
-//         let filelist = File::open(testgames).unwrap();
-//         let game_files = BufReader::new(filelist).lines().take(1);
+#[cfg(test)]
+mod sfg_replays {
+    use sgf;
+    use std::fs::File;
+    use std::io::BufReader;
+    use std::io::prelude::*;
+    use std::path::PathBuf;
+    use test::Bencher;
+    fn turns(node: &sgf::SgfNode) -> Vec<String> {
+        let mut vec = vec![];
+        _turns(node, &mut vec);
+        vec
+    }
+    fn _turns(node: &sgf::SgfNode, vec: &mut Vec<String>) {
+        vec.push(format!("{}", node));
+    }
+    #[bench]
+    fn replay_10_games(b: &mut Bencher) {
+        let jgdb = PathBuf::from("data/jgdb");
+        let mut testgames = jgdb.clone();
+        testgames.push("test.txt");
+        let filelist = File::open(testgames).unwrap();
+        let game_files = BufReader::new(filelist).lines().take(1);
 
-//         for game in game_files {
-//             let path = jgdb.join(PathBuf::from(game.unwrap()));
-//             println!("====== {} ======", path.to_str().unwrap());
+        for game in game_files {
+            let path = jgdb.join(PathBuf::from(game.unwrap()));
+            println!("====== {} ======", path.to_str().unwrap());
 
-//             let mut file = File::open(path).unwrap();
-//             let mut contents = String::new();
-//             file.read_to_string(&mut contents).unwrap();
+            let mut file = File::open(path).unwrap();
+            let mut contents = String::new();
+            file.read_to_string(&mut contents).unwrap();
 
-//             let game = sgf::sgf_node::SgfCollection::from_sgf(&contents).unwrap();
-//             println!("{:?}", game);
-//             println!("{:?}", turns(&game[0].children[0]));
-//             println!("");
-//         }
-//     }
-// }
+            let game = sgf::sgf_node::SgfCollection::from_sgf(&contents).unwrap();
+            println!("{:?}", game);
+            println!("{:?}", turns(&game[0].children[0]));
+            println!("");
+        }
+    }
+}

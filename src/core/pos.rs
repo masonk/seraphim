@@ -11,7 +11,23 @@ impl Pos19 {
     pub fn from_coords(c: usize, r: usize) -> Self {
         Pos19(c + r * 19)
     }
-
+    pub fn from_sgf_coords(c: char, r: char) -> Self {
+        lazy_static! {
+            static ref CHARS: Vec<char> = {
+                "abcdefghijklmnopqrs".chars().collect::<Vec<char>>()
+              // 123456789
+            };
+            static ref COLMAP: HashMap<char, i8> = {
+                let mut map = HashMap::new();
+                let pairs = (0..19).zip(CHARS.iter());
+                for (i, c) in pairs {
+                    map.insert(c.clone(), i);
+                }
+                map
+            };
+        }
+        Pos19::from_coords(COLMAP[&c] as usize, COLMAP[&r] as usize)
+    }
     pub fn to_coords(&self) -> (usize, usize) {
         // i = c + r * 19
         // (i - c)/19 = r

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::iter;
 pub type GoCollection = Vec<GameTree>;
 
 #[derive(Debug)]
@@ -19,8 +20,8 @@ pub enum PlayerColor {
 
 #[derive(Debug)]
 pub struct Stone {
-    color: PointColor,
-    point: Point,
+    pub color: PointColor,
+    pub point: Point,
 }
 
 #[derive(Debug)]
@@ -38,7 +39,6 @@ pub enum Move {
     /* From the spec (http://www.red-bean.com/sgf/ff5/m_vs_ax.htm):
     Add (resp. clear) black/white stones to the board. This can be used to set up positions or problems. Adding (resp. clearing) is done by 'overwriting' the given point with black/white/empty stones. It doesn't matter what was there before. Adding a stone must not trigger any rule specific actions, e.g. in Go GM[1]: no prisoners nor any other captures (e.g. suicide). Thus it's possible to create illegal board positions. */
     Add(Stone),
-    SetMoveNumber(isize),
 }
 #[derive(Debug)]
 pub struct GameTree {
@@ -48,6 +48,74 @@ pub struct GameTree {
     pub sequence: Vec<Node>,
     pub children: Vec<GameTree>,
 }
+
+impl GameTree {
+    fn is_pass(val: &str) -> bool {
+        val.len() == 0 || val[0..2] == *"tt" || val[0..2] == *"TT"
+    }
+    fn point(string: &String) -> Point {
+        Point(
+            string.chars().nth(0).unwrap(),
+            string.chars().nth(1).unwrap(),
+        )
+    }
+    fn moves<'a>(sequence: &'a Vec<Node>) -> Vec<Move> {
+        sequence
+            .iter()
+            .map(|n| {
+                if let Some(add) = n.properties.get("AB") {
+                    return Some(Move::Add(Stone {
+                        color: PointColor::Black,
+                        point: Self::point(add),
+                    }));
+                }
+                if let Some(add) = n.properties.get("AW") {
+                    return Some(Move::Add(Stone {
+                        color: PointColor::White,
+                        point: Self::point(add),
+                    }));
+                }
+                if let Some(mv) = n.properties.get("B") {
+                    if Self::is_pass(mv) {
+                        return Some(Move::Pass);
+                    }
+                    return Some(Move::Of(Stone {
+                        color: PointColor::Black,
+                        point: Self::point(mv),
+                    }));
+                }
+                if let Some(mv) = n.properties.get("W") {
+                    if Self::is_pass(mv) {
+                        return Some(Move::Pass);
+                    }
+                    return Some(Move::Of(Stone {
+                        color: PointColor::White,
+                        point: Self::point(mv),
+                    }));
+                }
+                None
+            })
+            .filter(|o| o.is_some())
+            .map(|o| o.unwrap())
+            .collect::<Vec<Move>>()
+    }
+    pub fn main_line<'a>(&self) -> Vec<Move> {
+        let mut vec = vec![];
+        let mut game_tree = self;
+        loop {
+            if game_tree.sequence.len() == 0 {
+                break;
+            }
+            vec.append(&mut Self::moves(&game_tree.sequence));
+            if game_tree.children.len() == 0 {
+                break;
+            }
+            game_tree = &game_tree.children[0];
+        }
+        vec
+    }
+}
+
 #[derive(Debug)]
 pub struct Node {
     pub properties: HashMap<String, String>, // all raw prop parses for this node
@@ -64,6 +132,27 @@ pub struct Node {
   CValueType = (ValueType | Compose)
   ValueType  = (None | Number | Real | Double | Color | SimpleText |
 		Text | Point  | Move | Stone)
+
+
+http://www.red-bean.com/sgf/sgf4.html
+  UcLetter   = "A".."Z"
+  Digit      = "0".."9"
+  None       = ""
+
+  Number     = [("+"|"-")] Digit { Digit }
+  Real       = Number ["." Digit { Digit }]
+
+  Double     = ("1" | "2")
+  Color      = ("B" | "W")
+
+  SimpleText = { any character (handling see below) }
+  Text       = { any character (handling see below) }
+
+  Point      = game-specific
+  Move       = game-specific
+  Stone      = game-specific
+
+  Compose    = ValueType ":" ValueType
 
 AB: Add Black: locations of Black stones to be placed on the board prior to the first move.
 AW: Add White: locations of White stones to be placed on the board prior to the first move.
