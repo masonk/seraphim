@@ -57,12 +57,23 @@ pub enum IllegalMoveError {
     Occupied(Color),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum Turn {
     Pass,
     Of(Pos19),
     Add(Color, Pos19),
 }
+
+impl fmt::Debug for Turn {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Turn::Pass => write!(f, "Pass"),
+            &Turn::Of(ref pos) => write!(f, "{}", pos),
+            &Turn::Add(ref color, ref pos) => write!(f, "{:?} Handicap @ {}", color, pos),
+        }
+    }
+}
+
 impl Turn {
     pub fn from_sgf(sgf: SgfMove) -> Self {
         match sgf {
@@ -80,11 +91,6 @@ impl Turn {
             ),
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct TurnList {
-    list: Vec<Turn>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -730,14 +736,34 @@ mod sgf_replays {
                     match board.play(turn.clone()) {
                         Err(err @ IllegalMoveError::Occupied(_)) => {
                             println!("----------------------------------------------------");
+
+                            let len = board.record.len();
+                            let mut replay = State19::init_from_sgf(&parse[0]);
+
+                            for (i, turn) in board.record.iter().enumerate() {
+                                let player = replay.next_player.clone();
+                                replay.play(turn.clone());
+                                println!("{}. {:?} {:?}", i, player, turn);
+
+                                if i < 10 {
+                                    println!("{}", replay);
+                                } else if i + 10 > len {
+                                    println!("{}", replay);
+                                }
+                            }
                             println!("{}", path.to_string_lossy());
-                            println!("Move error {:?} for move {:?}", err, turn);
-                            // println!("{:?}", parse[0]);
-                            println!("{}", board);
-                            println!("{}", board.serialize());
+                            println!(
+                                "Move error {:?} for {:?} {:?}",
+                                err, board.next_player, turn
+                            );
+                            // println!("parse {:?}", parse);
+                            println!("{:?}", parse[0]);
                             println!("----------------------------------------------------");
 
-                            return Err(format!("Move error {:?} for move {:?}", err, turn));
+                            return Err(format!(
+                                "Move error {:?} for {:?} {:?}",
+                                err, board.next_player, turn
+                            ));
                         }
                         _ => {}
                     }
