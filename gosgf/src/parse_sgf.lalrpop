@@ -50,7 +50,7 @@ GameTree: GameTree = {
 Sequence = <Node+>;
 
 Node: Node  = {
-    r";" <pairs: Property+> => {
+    r";" <pairs: Property*> => {
         let mut properties : HashMap<String, String> = HashMap::new();
         for (k, v) in pairs {
             properties.insert(k, v);

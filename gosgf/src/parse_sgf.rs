@@ -32,6 +32,7 @@ mod __parse__Collection {
         NtNode(Node),
         NtNode_2b(::std::vec::Vec<Node>),
         NtProperty((String, String)),
+        NtProperty_2a(::std::vec::Vec<(String, String)>),
         NtProperty_2b(::std::vec::Vec<(String, String)>),
         NtSequence(::std::vec::Vec<Node>),
         Nt____Collection(GoCollection),
@@ -50,35 +51,35 @@ mod __parse__Collection {
         // State 5
         0, 0, -8, -8, 0, 0,
         // State 6
-        -10, 0, -10, -10, 0, 0,
+        -11, 0, -11, -11, 0, 0,
         // State 7
-        10, 0, -15, -15, 0, 0,
+        10, 0, -18, -18, 0, 0,
         // State 8
         0, 0, 5, 13, 0, 0,
         // State 9
-        0, 16, 0, 0, 0, 0,
+        -9, 16, -9, -9, 0, 0,
         // State 10
-        -11, 0, -11, -11, 0, 0,
+        -12, 0, -12, -12, 0, 0,
         // State 11
         0, 0, 5, 17, 0, 0,
         // State 12
         0, 0, -3, -3, 0, 0,
         // State 13
-        -13, -13, -13, -13, 0, 0,
+        -16, -16, -16, -16, 0, 0,
         // State 14
-        -9, 16, -9, -9, 0, 0,
+        -10, 16, -10, -10, 0, 0,
         // State 15
-        -12, -12, -12, -12, 0, 0,
+        -13, -13, -13, -13, 0, 0,
         // State 16
         0, 0, -4, -4, 0, 0,
         // State 17
-        -14, -14, -14, -14, 0, 0,
+        -17, -17, -17, -17, 0, 0,
     ];
     const __EOF_ACTION: &'static [i32] = &[
         // State 0
         -1,
         // State 1
-        -16,
+        -19,
         // State 2
         -7,
         // State 3
@@ -114,41 +115,41 @@ mod __parse__Collection {
     ];
     const __GOTO: &'static [i32] = &[
         // State 0
-        2, 3, 0, 4, 0, 0, 0, 0, 0, 0,
+        2, 3, 0, 4, 0, 0, 0, 0, 0, 0, 0,
         // State 1
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 2
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 3
-        0, 6, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 4
-        0, 0, 0, 0, 7, 8, 0, 0, 9, 0,
+        0, 0, 0, 0, 7, 8, 0, 0, 0, 9, 0,
         // State 5
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 6
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 7
-        0, 0, 0, 0, 11, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0,
         // State 8
-        0, 3, 0, 12, 0, 0, 0, 0, 0, 0,
+        0, 3, 0, 12, 0, 0, 0, 0, 0, 0, 0,
         // State 9
-        0, 0, 0, 0, 0, 0, 14, 15, 0, 0,
+        0, 0, 0, 0, 0, 0, 14, 0, 15, 0, 0,
         // State 10
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 11
-        0, 6, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 12
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 13
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 14
-        0, 0, 0, 0, 0, 0, 18, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 18, 0, 0, 0, 0,
         // State 15
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 16
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         // State 17
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     fn __expected_tokens(__state: usize) -> Vec<::std::string::String> {
         const __TERMINAL: &'static [&'static str] = &[
@@ -288,48 +289,48 @@ mod __parse__Collection {
     {
         let __nonterminal = match -__action {
             1 => {
-                // Collection =  => ActionFn(14);
+                // Collection =  => ActionFn(16);
                 let __start = __symbols.last().map(|s| s.2.clone()).unwrap_or_default();
                 let __end = __lookahead_start.cloned().unwrap_or_else(|| __start.clone());
-                let __nt = super::__action14::<>(input, &__start, &__end);
+                let __nt = super::__action16::<>(input, &__start, &__end);
                 let __states_len = __states.len();
                 __states.truncate(__states_len - 0);
                 __symbols.push((__start, __Symbol::NtCollection(__nt), __end));
                 0
             }
             2 => {
-                // Collection = GameTree+ => ActionFn(15);
+                // Collection = GameTree+ => ActionFn(17);
                 let __sym0 = __pop_NtGameTree_2b(__symbols);
                 let __start = __sym0.0.clone();
                 let __end = __sym0.2.clone();
-                let __nt = super::__action15::<>(input, __sym0);
+                let __nt = super::__action17::<>(input, __sym0);
                 let __states_len = __states.len();
                 __states.truncate(__states_len - 1);
                 __symbols.push((__start, __Symbol::NtCollection(__nt), __end));
                 0
             }
             3 => {
-                // GameTree = r#"\\("#, Sequence, r#"\\)"# => ActionFn(16);
+                // GameTree = r#"\\("#, Sequence, r#"\\)"# => ActionFn(18);
                 let __sym2 = __pop_Termr_23_22_5c_5c_29_22_23(__symbols);
                 let __sym1 = __pop_NtSequence(__symbols);
                 let __sym0 = __pop_Termr_23_22_5c_5c_28_22_23(__symbols);
                 let __start = __sym0.0.clone();
                 let __end = __sym2.2.clone();
-                let __nt = super::__action16::<>(input, __sym0, __sym1, __sym2);
+                let __nt = super::__action18::<>(input, __sym0, __sym1, __sym2);
                 let __states_len = __states.len();
                 __states.truncate(__states_len - 3);
                 __symbols.push((__start, __Symbol::NtGameTree(__nt), __end));
                 1
             }
             4 => {
-                // GameTree = r#"\\("#, Sequence, GameTree+, r#"\\)"# => ActionFn(17);
+                // GameTree = r#"\\("#, Sequence, GameTree+, r#"\\)"# => ActionFn(19);
                 let __sym3 = __pop_Termr_23_22_5c_5c_29_22_23(__symbols);
                 let __sym2 = __pop_NtGameTree_2b(__symbols);
                 let __sym1 = __pop_NtSequence(__symbols);
                 let __sym0 = __pop_Termr_23_22_5c_5c_28_22_23(__symbols);
                 let __start = __sym0.0.clone();
                 let __end = __sym3.2.clone();
-                let __nt = super::__action17::<>(input, __sym0, __sym1, __sym2, __sym3);
+                let __nt = super::__action19::<>(input, __sym0, __sym1, __sym2, __sym3);
                 let __states_len = __states.len();
                 __states.truncate(__states_len - 4);
                 __symbols.push((__start, __Symbol::NtGameTree(__nt), __end));
@@ -380,18 +381,29 @@ mod __parse__Collection {
                 3
             }
             9 => {
-                // Node = r#";"#, Property+ => ActionFn(4);
+                // Node = r#";"# => ActionFn(20);
+                let __sym0 = __pop_Termr_23_22_3b_22_23(__symbols);
+                let __start = __sym0.0.clone();
+                let __end = __sym0.2.clone();
+                let __nt = super::__action20::<>(input, __sym0);
+                let __states_len = __states.len();
+                __states.truncate(__states_len - 1);
+                __symbols.push((__start, __Symbol::NtNode(__nt), __end));
+                4
+            }
+            10 => {
+                // Node = r#";"#, Property+ => ActionFn(21);
                 let __sym1 = __pop_NtProperty_2b(__symbols);
                 let __sym0 = __pop_Termr_23_22_3b_22_23(__symbols);
                 let __start = __sym0.0.clone();
                 let __end = __sym1.2.clone();
-                let __nt = super::__action4::<>(input, __sym0, __sym1);
+                let __nt = super::__action21::<>(input, __sym0, __sym1);
                 let __states_len = __states.len();
                 __states.truncate(__states_len - 2);
                 __symbols.push((__start, __Symbol::NtNode(__nt), __end));
                 4
             }
-            10 => {
+            11 => {
                 // Node+ = Node => ActionFn(8);
                 let __sym0 = __pop_NtNode(__symbols);
                 let __start = __sym0.0.clone();
@@ -402,7 +414,7 @@ mod __parse__Collection {
                 __symbols.push((__start, __Symbol::NtNode_2b(__nt), __end));
                 5
             }
-            11 => {
+            12 => {
                 // Node+ = Node+, Node => ActionFn(9);
                 let __sym1 = __pop_NtNode(__symbols);
                 let __sym0 = __pop_NtNode_2b(__symbols);
@@ -414,7 +426,7 @@ mod __parse__Collection {
                 __symbols.push((__start, __Symbol::NtNode_2b(__nt), __end));
                 5
             }
-            12 => {
+            13 => {
                 // Property = r#"[A-Z]+\\[[^\\]]*\\]"# => ActionFn(5);
                 let __sym0 = __pop_Termr_23_22_5bA_2dZ_5d_2b_5c_5c_5b_5b_5e_5c_5c_5d_5d_2a_5c_5c_5d_22_23(__symbols);
                 let __start = __sym0.0.clone();
@@ -425,30 +437,51 @@ mod __parse__Collection {
                 __symbols.push((__start, __Symbol::NtProperty(__nt), __end));
                 6
             }
-            13 => {
-                // Property+ = Property => ActionFn(6);
+            14 => {
+                // Property* =  => ActionFn(6);
+                let __start = __symbols.last().map(|s| s.2.clone()).unwrap_or_default();
+                let __end = __lookahead_start.cloned().unwrap_or_else(|| __start.clone());
+                let __nt = super::__action6::<>(input, &__start, &__end);
+                let __states_len = __states.len();
+                __states.truncate(__states_len - 0);
+                __symbols.push((__start, __Symbol::NtProperty_2a(__nt), __end));
+                7
+            }
+            15 => {
+                // Property* = Property+ => ActionFn(7);
+                let __sym0 = __pop_NtProperty_2b(__symbols);
+                let __start = __sym0.0.clone();
+                let __end = __sym0.2.clone();
+                let __nt = super::__action7::<>(input, __sym0);
+                let __states_len = __states.len();
+                __states.truncate(__states_len - 1);
+                __symbols.push((__start, __Symbol::NtProperty_2a(__nt), __end));
+                7
+            }
+            16 => {
+                // Property+ = Property => ActionFn(14);
                 let __sym0 = __pop_NtProperty(__symbols);
                 let __start = __sym0.0.clone();
                 let __end = __sym0.2.clone();
-                let __nt = super::__action6::<>(input, __sym0);
+                let __nt = super::__action14::<>(input, __sym0);
                 let __states_len = __states.len();
                 __states.truncate(__states_len - 1);
                 __symbols.push((__start, __Symbol::NtProperty_2b(__nt), __end));
-                7
+                8
             }
-            14 => {
-                // Property+ = Property+, Property => ActionFn(7);
+            17 => {
+                // Property+ = Property+, Property => ActionFn(15);
                 let __sym1 = __pop_NtProperty(__symbols);
                 let __sym0 = __pop_NtProperty_2b(__symbols);
                 let __start = __sym0.0.clone();
                 let __end = __sym1.2.clone();
-                let __nt = super::__action7::<>(input, __sym0, __sym1);
+                let __nt = super::__action15::<>(input, __sym0, __sym1);
                 let __states_len = __states.len();
                 __states.truncate(__states_len - 2);
                 __symbols.push((__start, __Symbol::NtProperty_2b(__nt), __end));
-                7
+                8
             }
-            15 => {
+            18 => {
                 // Sequence = Node+ => ActionFn(3);
                 let __sym0 = __pop_NtNode_2b(__symbols);
                 let __start = __sym0.0.clone();
@@ -457,9 +490,9 @@ mod __parse__Collection {
                 let __states_len = __states.len();
                 __states.truncate(__states_len - 1);
                 __symbols.push((__start, __Symbol::NtSequence(__nt), __end));
-                8
+                9
             }
-            16 => {
+            19 => {
                 // __Collection = Collection => ActionFn(0);
                 let __sym0 = __pop_NtCollection(__symbols);
                 let __start = __sym0.0.clone();
@@ -470,7 +503,7 @@ mod __parse__Collection {
             _ => panic!("invalid action code {}", __action)
         };
         let __state = *__states.last().unwrap() as usize;
-        let __next_state = __GOTO[__state * 10 + __nonterminal] - 1;
+        let __next_state = __GOTO[__state * 11 + __nonterminal] - 1;
         __states.push(__next_state);
         None
     }
@@ -614,6 +647,17 @@ mod __parse__Collection {
      {
         match __symbols.pop().unwrap() {
             (__l, __Symbol::NtProperty(__v), __r) => (__l, __v, __r),
+            _ => panic!("symbol type mismatch")
+        }
+    }
+    fn __pop_NtProperty_2a<
+      'input,
+    >(
+        __symbols: &mut ::std::vec::Vec<(usize,__Symbol<'input>,usize)>
+    ) -> (usize, ::std::vec::Vec<(String, String)>, usize)
+     {
+        match __symbols.pop().unwrap() {
+            (__l, __Symbol::NtProperty_2a(__v), __r) => (__l, __v, __r),
             _ => panic!("symbol type mismatch")
         }
     }
@@ -865,10 +909,11 @@ fn __action6<
     'input,
 >(
     input: &'input str,
-    (_, __0, _): (usize, (String, String), usize),
+    __lookbehind: &usize,
+    __lookahead: &usize,
 ) -> ::std::vec::Vec<(String, String)>
 {
-    vec![__0]
+    vec![]
 }
 
 #[allow(unused_variables)]
@@ -877,10 +922,9 @@ fn __action7<
 >(
     input: &'input str,
     (_, v, _): (usize, ::std::vec::Vec<(String, String)>, usize),
-    (_, e, _): (usize, (String, String), usize),
 ) -> ::std::vec::Vec<(String, String)>
 {
-    { let mut v = v; v.push(e); v }
+    v
 }
 
 #[allow(unused_variables)]
@@ -957,6 +1001,29 @@ fn __action14<
     'input,
 >(
     input: &'input str,
+    (_, __0, _): (usize, (String, String), usize),
+) -> ::std::vec::Vec<(String, String)>
+{
+    vec![__0]
+}
+
+#[allow(unused_variables)]
+fn __action15<
+    'input,
+>(
+    input: &'input str,
+    (_, v, _): (usize, ::std::vec::Vec<(String, String)>, usize),
+    (_, e, _): (usize, (String, String), usize),
+) -> ::std::vec::Vec<(String, String)>
+{
+    { let mut v = v; v.push(e); v }
+}
+
+#[allow(unused_variables)]
+fn __action16<
+    'input,
+>(
+    input: &'input str,
     __lookbehind: &usize,
     __lookahead: &usize,
 ) -> GoCollection
@@ -976,7 +1043,7 @@ fn __action14<
 }
 
 #[allow(unused_variables)]
-fn __action15<
+fn __action17<
     'input,
 >(
     input: &'input str,
@@ -997,7 +1064,7 @@ fn __action15<
 }
 
 #[allow(unused_variables)]
-fn __action16<
+fn __action18<
     'input,
 >(
     input: &'input str,
@@ -1024,7 +1091,7 @@ fn __action16<
 }
 
 #[allow(unused_variables)]
-fn __action17<
+fn __action19<
     'input,
 >(
     input: &'input str,
@@ -1047,6 +1114,52 @@ fn __action17<
         __1,
         __temp0,
         __3,
+    )
+}
+
+#[allow(unused_variables)]
+fn __action20<
+    'input,
+>(
+    input: &'input str,
+    __0: (usize, &'input str, usize),
+) -> Node
+{
+    let __start0 = __0.2.clone();
+    let __end0 = __0.2.clone();
+    let __temp0 = __action6(
+        input,
+        &__start0,
+        &__end0,
+    );
+    let __temp0 = (__start0, __temp0, __end0);
+    __action4(
+        input,
+        __0,
+        __temp0,
+    )
+}
+
+#[allow(unused_variables)]
+fn __action21<
+    'input,
+>(
+    input: &'input str,
+    __0: (usize, &'input str, usize),
+    __1: (usize, ::std::vec::Vec<(String, String)>, usize),
+) -> Node
+{
+    let __start0 = __1.0.clone();
+    let __end0 = __1.2.clone();
+    let __temp0 = __action7(
+        input,
+        __1,
+    );
+    let __temp0 = (__start0, __temp0, __end0);
+    __action4(
+        input,
+        __0,
+        __temp0,
     )
 }
 

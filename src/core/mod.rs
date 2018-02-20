@@ -285,13 +285,13 @@ impl State19 {
     }
 
     fn clear_group(&mut self, id: usize) {
-        {
-            let group = self.groups.get(id).unwrap();
-            println!("Clearing group {} containing:", id);
-            for idx in group {
-                println!("\t{}", Pos19(*idx));
-            }
-        }
+        // {
+        //     let group = self.groups.get(id).unwrap();
+        //     println!("Clearing group {} containing:", id);
+        //     for idx in group {
+        //         println!("\t{}", Pos19(*idx));
+        //     }
+        // }
         for idx in self.groups.get(id).unwrap() {
             // self.set_idx(idx, Color::Empty); // Borrow checker complains
             self.boards[0][*idx] = Color::Empty;
@@ -350,14 +350,14 @@ impl State19 {
     pub fn play(&mut self, turn: Turn) -> Result<(), IllegalMoveError> {
         let res = match turn {
             Turn::Pass => {
-                println!("{:?} Passes", self.next_player);
+                // println!("{:?} Passes", self.next_player);
 
                 self.record.push(turn);
                 self.next_player = self.next_player.other();
                 Ok(())
             }
             Turn::Add(color, ref pos) => {
-                println!("Add Handicap {:?} {}", color, pos);
+                // println!("Add Handicap {:?} {}", color, pos);
 
                 self.set(pos, color);
                 self.merge_groups(&self.next_player.color(), pos);
@@ -365,13 +365,13 @@ impl State19 {
                 Ok(())
             }
             Turn::Of(ref pos) => {
-                println!("Playing {:?} {}", self.next_player, pos);
+                // println!("Playing {:?} {}", self.next_player, pos);
                 {
                     let cur = self.get(pos);
                     match cur {
                         Color::Empty => {}
                         _ => {
-                            println!("Is {} occupied ({:?})", pos, cur.clone());
+                            // println!("Is {} occupied ({:?})", pos, cur.clone());
 
                             return Err(IllegalMoveError::Occupied(cur.clone()));
                         }
@@ -424,9 +424,9 @@ impl State19 {
                 Ok(())
             }
         };
-        if self.record.len() > 237 {
-            println!("{}", self);
-        }
+        // if self.record.len() > 237 {
+        //     println!("{}", self);
+        // }
         res
     }
 
@@ -639,13 +639,32 @@ pub mod sgf_replays {
         assert_eq!(parse[0].handicap, 6);
     }
     #[test]
-    fn game189_throws_no_errors() {
+    fn game189_completes() {
         do_one(PathBuf::from("data/jgdb/./sgf/test/0000/00000189.sgf")).unwrap();
     }
 
     #[test]
-    fn game836_throws_no_errors() {
+    fn game836_completes() {
         do_one(PathBuf::from("data/jgdb/./sgf/test/0000/00000836.sgf")).unwrap();
+    }
+
+    #[test]
+    fn game4648_completes() {
+        do_one(PathBuf::from("data/jgdb/./sgf/test/0004/00004648.sgf")).unwrap();
+    }
+
+    #[test]
+    fn can_parse_empty_nodes() {
+        let path = "data/jgdb/./sgf/test/0001/00001470.sgf";
+        let file = File::open(path.clone()).expect(&format!("Couldn't open path {:?}", path));
+
+        let mut buf = String::new();
+        BufReader::new(file).read_to_string(&mut buf);
+
+        match gosgf::parse_sgf::parse_Collection(&buf) {
+            Ok(_) => {}
+            Err(err) => panic!("{:?}", err),
+        }
     }
 
     #[test]
@@ -730,11 +749,14 @@ pub mod sgf_replays {
         let filefile = File::open(filefilename).expect("Couldn't open filefile");
         for fname in BufReader::new(filefile).lines().take(10000) {
             let path = jgdb.join(PathBuf::from(fname.unwrap()));
-            do_one(path).unwrap();
+            match do_one(path) {
+                Err(err @ IllegalMoveError::Occupied(_)) => panic!("{:?}", err),
+                _ => {}
+            }
         }
     }
 
-    pub fn do_one(path: PathBuf) -> Result<(), String> {
+    pub fn do_one(path: PathBuf) -> Result<(), IllegalMoveError> {
         let file = File::open(path.clone()).expect(&format!("Couldn't open path {:?}", path));
 
         let mut buf = String::new();
@@ -761,17 +783,20 @@ pub mod sgf_replays {
                                 "Move error {:?} for {:?} {:?}",
                                 err, board.next_player, turn
                             );
-                            // println!("parse {:?}", parse);
-                            // println!("{:?}", parse[0]);
                             println!("----------------------------------------------------");
 
-                            return Err(format!(
-                                "Move error {:?} for {:?} {:?}",
-                                err, board.next_player, turn
-                            ));
+                            return Err(err);
                         }
                         Err(err @ IllegalMoveError::PositionalSuperko) => {
-                            return Err(format!("{:?} @ {:?} {:?}", err, board.next_player, turn))
+                            println!("----------------------------------------------------");
+                            println!("{}", path.to_string_lossy());
+                            println!(
+                                "{:?} @ {:?} {:?}, aborting game",
+                                err, board.next_player, turn
+                            );
+
+                            println!("----------------------------------------------------");
+                            return Err(err);
                         }
                         _ => {}
                     }
