@@ -2,6 +2,8 @@
 use std::str::FromStr;
 use gosgf::*;
 use std::collections::HashMap;
+use regex;
+
 grammar;
 
 pub Collection: GoCollection = <GameTree*>;
@@ -12,10 +14,9 @@ match {
      r";" ,
      r"\[",
      r"\]",
-    r"[A-Z]+",
 }
 else {
-    r"[\w\.\+]+",
+    r"[A-Z]+\[[^\]]*\]"
 }
 GameTree: GameTree = {
     r"\(" <sequence: Sequence> <children: GameTree*> r"\)" => {
@@ -59,7 +60,16 @@ Node: Node  = {
 };
 
 Property: (String, String) = {
-    <k: PropIdent> <v: PropValue> => (k.to_string(), v.to_string())
+    <r"[A-Z]+\[[^\]]*\]"> => {
+        lazy_static! {
+            static ref RE : regex::Regex = regex::Regex::new(r"([A-Z]+)\[([^\]]*)\]").unwrap();
+        }
+
+        let cap = RE.captures(<>).unwrap();
+
+        let k = &cap[1];
+        let v = &cap[2];
+        (k.to_string(), v.to_string())
+    }
 };
-PropIdent = <r"[A-Z]+">;
-PropValue = r"\[" <r"[\w\.\+]+"> r"\]";
+
