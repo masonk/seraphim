@@ -285,6 +285,13 @@ impl State19 {
     }
 
     fn clear_group(&mut self, id: usize) {
+        {
+            let group = self.groups.get(id).unwrap();
+            println!("Clearing group {} containing:", id);
+            for idx in group {
+                println!("\t{}", Pos19(*idx));
+            }
+        }
         for idx in self.groups.get(id).unwrap() {
             // self.set_idx(idx, Color::Empty); // Borrow checker complains
             self.boards[0][*idx] = Color::Empty;
@@ -341,24 +348,33 @@ impl State19 {
     }
 
     pub fn play(&mut self, turn: Turn) -> Result<(), IllegalMoveError> {
-        match turn {
+        let res = match turn {
             Turn::Pass => {
+                println!("{:?} Passes", self.next_player);
+
                 self.record.push(turn);
                 self.next_player = self.next_player.other();
                 Ok(())
             }
             Turn::Add(color, ref pos) => {
+                println!("Add Handicap {:?} {}", color, pos);
+
                 self.set(pos, color);
                 self.merge_groups(&self.next_player.color(), pos);
                 self.record.push(turn);
                 Ok(())
             }
             Turn::Of(ref pos) => {
+                println!("Playing {:?} {}", self.next_player, pos);
                 {
                     let cur = self.get(pos);
                     match cur {
                         Color::Empty => {}
-                        _ => return Err(IllegalMoveError::Occupied(cur.clone())),
+                        _ => {
+                            println!("Is {} occupied ({:?})", pos, cur.clone());
+
+                            return Err(IllegalMoveError::Occupied(cur.clone()));
+                        }
                     }
                 }
                 let point = self.next_player.color();
@@ -407,7 +423,11 @@ impl State19 {
                 self.record.push(turn);
                 Ok(())
             }
+        };
+        if self.record.len() > 237 {
+            println!("{}", self);
         }
+        res
     }
 
     pub fn play_str(&mut self, pos: &str) -> Result<(), IllegalMoveError> {
@@ -590,8 +610,8 @@ mod basic {
     }
 }
 
-#[cfg(test)]
-mod sgf_replays {
+// #[cfg(test)]
+pub mod sgf_replays {
     use std::fs::File;
     use std::io::BufReader;
     use std::io::prelude::*;
@@ -714,7 +734,7 @@ mod sgf_replays {
         }
     }
 
-    fn do_one(path: PathBuf) -> Result<(), String> {
+    pub fn do_one(path: PathBuf) -> Result<(), String> {
         let file = File::open(path.clone()).expect(&format!("Couldn't open path {:?}", path));
 
         let mut buf = String::new();
@@ -736,34 +756,22 @@ mod sgf_replays {
                     match board.play(turn.clone()) {
                         Err(err @ IllegalMoveError::Occupied(_)) => {
                             println!("----------------------------------------------------");
-
-                            let len = board.record.len();
-                            let mut replay = State19::init_from_sgf(&parse[0]);
-
-                            for (i, turn) in board.record.iter().enumerate() {
-                                let player = replay.next_player.clone();
-                                replay.play(turn.clone());
-                                println!("{}. {:?} {:?}", i, player, turn);
-
-                                if i < 10 {
-                                    println!("{}", replay);
-                                } else if i + 10 > len {
-                                    println!("{}", replay);
-                                }
-                            }
                             println!("{}", path.to_string_lossy());
                             println!(
                                 "Move error {:?} for {:?} {:?}",
                                 err, board.next_player, turn
                             );
                             // println!("parse {:?}", parse);
-                            println!("{:?}", parse[0]);
+                            // println!("{:?}", parse[0]);
                             println!("----------------------------------------------------");
 
                             return Err(format!(
                                 "Move error {:?} for {:?} {:?}",
                                 err, board.next_player, turn
                             ));
+                        }
+                        Err(err @ IllegalMoveError::PositionalSuperko) => {
+                            return Err(format!("{:?} @ {:?} {:?}", err, board.next_player, turn))
                         }
                         _ => {}
                     }
