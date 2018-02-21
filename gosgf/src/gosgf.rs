@@ -4,14 +4,14 @@ pub type GoCollection = Vec<GameTree>;
 #[derive(Debug)]
 pub struct Point(pub char, pub char);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum PointColor {
     Black,
     White,
     Empty,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum PlayerColor {
     Black,
     White,

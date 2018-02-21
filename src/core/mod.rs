@@ -14,6 +14,8 @@ use gosgf::Move as SgfMove;
 use gosgf::PointColor as SgfColor;
 use gosgf::Stone as SgfStone;
 use serde_json;
+use itertools;
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Player {
@@ -162,13 +164,32 @@ impl State19 {
     pub fn init_from_sgf(tree: &gosgf::GameTree) -> Self {
         let mut board = Self::new();
         board.komi = tree.komi;
-        board.next_player = if tree.handicap == 0 {
-            Player::Black
-        } else {
-            Player::White
-        };
+        let first_move = tree.main_line()
+            .into_iter()
+            .filter(|m| match m {
+                &gosgf::Move::Of(_) => true,
+                _ => false,
+            })
+            .nth(0)
+            .unwrap();
+
+        match first_move {
+            gosgf::Move::Of(gosgf::Stone { color, .. }) => {
+                if color == gosgf::PointColor::Black {
+                    board.next_player = Player::Black;
+                } else if color == gosgf::PointColor::White {
+                    board.next_player = Player::White;
+                } else {
+                    error!("First play of the game was an empty stone: that is whack.");
+                }
+            }
+            _ => {
+                error!("Couldn't find the first move of the game; likely a corrupted parse.");
+            }
+        }
         board
     }
+
     fn get_next_id(&mut self) -> usize {
         let id = self.next_id;
         self.next_id += 1;
@@ -285,13 +306,16 @@ impl State19 {
     }
 
     fn clear_group(&mut self, id: usize) {
-        // {
-        //     let group = self.groups.get(id).unwrap();
-        //     println!("Clearing group {} containing:", id);
-        //     for idx in group {
-        //         println!("\t{}", Pos19(*idx));
-        //     }
-        // }
+        trace!("Clearing group {} containing:", id);
+        trace!(
+            "\t{}",
+            self.groups
+                .get(id)
+                .unwrap()
+                .iter()
+                .map(|v| format!("{}", Pos19(*v)))
+                .join(", ")
+        );
         for idx in self.groups.get(id).unwrap() {
             // self.set_idx(idx, Color::Empty); // Borrow checker complains
             self.boards[0][*idx] = Color::Empty;
@@ -350,14 +374,14 @@ impl State19 {
     pub fn play(&mut self, turn: Turn) -> Result<(), IllegalMoveError> {
         let res = match turn {
             Turn::Pass => {
-                // println!("{:?} Passes", self.next_player);
+                debug!("{:?} Passes", self.next_player);
 
                 self.record.push(turn);
                 self.next_player = self.next_player.other();
                 Ok(())
             }
             Turn::Add(color, ref pos) => {
-                // println!("Add Handicap {:?} {}", color, pos);
+                debug!("Add Handicap {:?} {}", color, pos);
 
                 self.set(pos, color);
                 self.merge_groups(&self.next_player.color(), pos);
@@ -365,15 +389,15 @@ impl State19 {
                 Ok(())
             }
             Turn::Of(ref pos) => {
-                // println!("Playing {:?} {}", self.next_player, pos);
+                debug!("Playing {:?} {}", self.next_player, pos);
                 {
                     let cur = self.get(pos);
                     match cur {
                         Color::Empty => {}
                         _ => {
-                            // println!("Is {} occupied ({:?})", pos, cur.clone());
-
-                            return Err(IllegalMoveError::Occupied(cur.clone()));
+                            let err = Err(IllegalMoveError::Occupied(cur.clone()));
+                            warn!("{:?}", err);
+                            return err;
                         }
                     }
                 }
@@ -389,7 +413,9 @@ impl State19 {
 
                 if prev {
                     self.set(&pos, Color::Empty);
-                    return Err(IllegalMoveError::PositionalSuperko);
+                    let err = Err(IllegalMoveError::PositionalSuperko);
+                    warn!("{:?}", err);
+                    return err;
                 }
 
                 self.komap.insert(kokey, true);
@@ -402,7 +428,27 @@ impl State19 {
                 // Every group that counted this position as a liberty stops counting it.
                 let &Pos19(thisidx) = pos;
                 let enemygroups = self.nearby_groups(pos, self.next_player.other().color());
-
+                if enemygroups.len() > 0 {
+                    trace!(
+                        "Placed stone touched enemy groups\n{}",
+                        enemygroups
+                            .iter()
+                            .sorted()
+                            .into_iter()
+                            .map(|gid| format!(
+                                "  {}: [{}]",
+                                gid,
+                                self.groups
+                                    .get(*gid)
+                                    .unwrap()
+                                    .iter()
+                                    .map(|pos| format!("{}", Pos19(*pos)))
+                                    .sorted()
+                                    .join(", ")
+                            ))
+                            .join("\n")
+                    )
+                }
                 for groupid in enemygroups {
                     let mut libs = self.liberties.get_mut(groupid).unwrap();
 
@@ -421,12 +467,12 @@ impl State19 {
 
                 self.next_player = self.next_player.other();
                 self.record.push(turn);
+
+                trace!("\n{}", self);
                 Ok(())
             }
         };
-        // if self.record.len() > 237 {
-        //     println!("{}", self);
-        // }
+
         res
     }
 
@@ -644,11 +690,6 @@ pub mod sgf_replays {
     }
 
     #[test]
-    fn game836_completes() {
-        do_one(PathBuf::from("data/jgdb/./sgf/test/0000/00000836.sgf")).unwrap();
-    }
-
-    #[test]
     fn game4648_completes() {
         do_one(PathBuf::from("data/jgdb/./sgf/test/0004/00004648.sgf")).unwrap();
     }
@@ -692,8 +733,14 @@ pub mod sgf_replays {
 
     #[test]
     fn game_248_has_superko() {
-        let path = PathBuf::from("data/jgdb/./sgf/test/0000/00000248.sgf");
+        assert_superko(PathBuf::from("data/jgdb/./sgf/test/0000/00000248.sgf"))
+    }
 
+    #[test]
+    fn game_836_has_superko() {
+        assert_superko(PathBuf::from("data/jgdb/./sgf/test/0000/00000836.sgf"))
+    }
+    fn assert_superko(path: PathBuf) {
         let file = File::open(path.clone()).expect(&format!("Couldn't open path {:?}", path));
 
         let mut buf = String::new();
@@ -711,7 +758,10 @@ pub mod sgf_replays {
 
         for turn in turns {
             match board.play(turn) {
-                Err(IllegalMoveError::PositionalSuperko) => superko = true,
+                Err(IllegalMoveError::PositionalSuperko) => {
+                    superko = true;
+                    break;
+                }
                 _ => {}
             }
         }
@@ -747,7 +797,7 @@ pub mod sgf_replays {
         let filefilename = "data/jgdb/all.txt";
 
         let filefile = File::open(filefilename).expect("Couldn't open filefile");
-        for fname in BufReader::new(filefile).lines().take(10000) {
+        for fname in BufReader::new(filefile).lines().take(5000) {
             let path = jgdb.join(PathBuf::from(fname.unwrap()));
             match do_one(path) {
                 Err(err @ IllegalMoveError::Occupied(_)) => panic!("{:?}", err),
