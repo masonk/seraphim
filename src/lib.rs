@@ -5,6 +5,8 @@
 #![feature(test)]
 
 pub mod core;
+pub mod search;
+
 extern crate gosgf;
 extern crate itertools;
 #[macro_use]

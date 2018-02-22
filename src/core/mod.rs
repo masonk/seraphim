@@ -14,7 +14,6 @@ use gosgf::Move as SgfMove;
 use gosgf::PointColor as SgfColor;
 use gosgf::Stone as SgfStone;
 use serde_json;
-use itertools;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +56,7 @@ fn hash(board: &Board19) -> Vec<u8> {
 pub enum IllegalMoveError {
     PositionalSuperko,
     Occupied(Color),
+    GameOver,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -141,13 +141,10 @@ pub struct State19 {
     liberties: VecMap<BTreeSet<usize>>, // All of the liberties that a group has
     next_id: usize,
     komi: f64,
+    pub final_score: Option<Score>, // If the game is over  the score will be set.
 }
 
 impl State19 {
-    pub fn serialize(&self) -> String {
-        let moves = serde_json::to_string_pretty(&self.record).unwrap();
-        moves
-    }
     pub fn new() -> Self {
         State19 {
             next_player: Player::Black,
@@ -159,6 +156,7 @@ impl State19 {
             liberties: VecMap::with_capacity(19 * 19),
             next_id: 0,
             komi: 7.5,
+            final_score: None,
         }
     }
     pub fn init_from_sgf(tree: &gosgf::GameTree) -> Self {
@@ -170,11 +168,10 @@ impl State19 {
                 &gosgf::Move::Of(_) => true,
                 _ => false,
             })
-            .nth(0)
-            .unwrap();
+            .nth(0);
 
         match first_move {
-            gosgf::Move::Of(gosgf::Stone { color, .. }) => {
+            Some(gosgf::Move::Of(gosgf::Stone { color, .. })) => {
                 if color == gosgf::PointColor::Black {
                     board.next_player = Player::Black;
                 } else if color == gosgf::PointColor::White {
@@ -184,7 +181,7 @@ impl State19 {
                 }
             }
             _ => {
-                error!("Couldn't find the first move of the game; likely a corrupted parse.");
+                board.next_player = Player::Black;
             }
         }
         board
@@ -372,12 +369,22 @@ impl State19 {
     }
 
     pub fn play(&mut self, turn: Turn) -> Result<(), IllegalMoveError> {
+        if let Some(_) = self.final_score {
+            return Err(IllegalMoveError::GameOver);
+        }
         let res = match turn {
             Turn::Pass => {
                 debug!("{:?} Passes", self.next_player);
-
+                let mut game_over = false;
+                if let Some(&Turn::Pass) = self.record.last() {
+                    game_over = true;
+                }
                 self.record.push(turn);
+
                 self.next_player = self.next_player.other();
+                if game_over {
+                    self.final_score = Some(self.score());
+                }
                 Ok(())
             }
             Turn::Add(color, ref pos) => {
@@ -700,7 +707,7 @@ pub mod sgf_replays {
         let file = File::open(path.clone()).expect(&format!("Couldn't open path {:?}", path));
 
         let mut buf = String::new();
-        BufReader::new(file).read_to_string(&mut buf);
+        BufReader::new(file).read_to_string(&mut buf).unwrap();
 
         match gosgf::parse_sgf::parse_Collection(&buf) {
             Ok(_) => {}

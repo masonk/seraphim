@@ -1,6 +1,4 @@
 extern crate flexi_logger;
-#[macro_use]
-extern crate log;
 extern crate seraph;
 
 // use seraph::core;
