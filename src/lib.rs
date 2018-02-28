@@ -4,7 +4,7 @@
 #![feature(nll)]
 #![feature(test)]
 
-pub mod core;
+pub mod go;
 pub mod search;
 
 extern crate gosgf;
@@ -23,3 +23,4 @@ extern crate serde_json;
 
 #[macro_use]
 extern crate log;
+extern crate petgraph;

@@ -95,7 +95,7 @@ impl Turn {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Score {
     pub black: f64,
     pub white: f64,
@@ -131,6 +131,7 @@ TODO:
 don't hash positional superko?
 
 */
+#[derive(Clone)]
 pub struct State19 {
     next_player: Player,
     boards: [Board19; 9], // The most recent 9 board states states. Zeroth board is the current state. This unorthodox layout is how the net likes to feed.
@@ -799,6 +800,7 @@ pub mod sgf_replays {
     // }
 
     #[test]
+    #[ignore]
     fn many_sgf_games_no_occupied_errors() {
         let jgdb = PathBuf::from("data/jgdb");
         let filefilename = "data/jgdb/all.txt";

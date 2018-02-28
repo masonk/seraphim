@@ -16,6 +16,6 @@ fn init_env_logger() {
 }
 fn main() {
     init_env_logger();
-    seraph::core::sgf_replays::do_one(PathBuf::from("data/jgdb/./sgf/test/0004/00004648.sgf"))
+    seraph::go::sgf_replays::do_one(PathBuf::from("data/jgdb/./sgf/test/0004/00004648.sgf"))
         .unwrap();
 }
