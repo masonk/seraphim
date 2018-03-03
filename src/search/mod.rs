@@ -2,7 +2,8 @@
 */
 use petgraph;
 
-enum GameResult {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GameResult {
     InProgress,
     TerminatedWithoutResult,
     LastPlayerWon,
@@ -25,12 +26,16 @@ This trait is meant to be implemented by a consumer of the library.
 State is a state of the game. It will be created by apply()ing an Action to an existing State or by calling root() to get the root state. For each (state, action) pair, expert.apply(&state, &action) will only be called one time.
 
 */
-trait GameExpert<State, Action>
+pub trait GameExpert<State, Action>
 where
     State: ::std::hash::Hash,
 {
     fn root(&self) -> State;
 
+    // TODO: The AGZ paper minibatches the request for legal_actions
+    // into batches 8. There should definitely be a way of batching these requests
+    // This has to come after multi-threading the search, since threads block
+    // while waiting for their batch to accumulate.
     fn legal_actions(&self, state: &State) -> (Vec<Action>, Vec<f32>);
 
     fn apply(&mut self, state: &State, action: &Action) -> State; // When MCTS choses a legal action from a particular state for the first time, it will call this function to expand a leaf node with a new state.
@@ -57,7 +62,6 @@ struct Edge<Action> {
 
 struct Node<State> {
     expanded: bool,
-    next_visit: Option<NodeIdx>, // The child node that MCTS should visit next. Computed during backup pass. If null, this node is a leaf.
     parent_edge_idx: Option<EdgeIdx>,
     state: Option<State>,
     result: Option<GameResult>,
@@ -67,19 +71,19 @@ impl<State> Node<State> {
         Node {
             expanded: false,
             parent_edge_idx: None,
-            next_visit: None,
             state: None,
             result: None,
         }
     }
 }
-struct SearchTree<G, State, Action>
+pub struct SearchTree<G, State, Action>
 where
     State: ::std::hash::Hash,
     G: GameExpert<State, Action>,
 {
     game_expert: G,
     search_tree: petgraph::Graph<Node<State>, Edge<Action>>,
+    cpuct: f32, // A constant determining the level of exploration
 }
 
 impl<G, State, Action> SearchTree<G, State, Action>
@@ -87,46 +91,120 @@ where
     State: ::std::hash::Hash,
     G: GameExpert<State, Action>,
 {
-    // After selecting the next node idx, proceed with it
-    fn proceed(&mut self, node_idx: NodeIdx) {
-        let node = self.search_tree.node_weight(node_idx).unwrap();
-        match node.expanded {
-            false => self.expand(node_idx),
-            true => self.proceed(node.next_visit.unwrap()),
+    // pub fn get_improved_hypotheses(&mut self) -> Hypotheses<Action> {}
+
+    // recursively follow the search to a terminal node (A node where GameResult is not InProgress),
+    // then back up the tree, updating edge weights.
+    fn proceed(&mut self, node_idx: NodeIdx, node: &mut Node<State>) {
+        let self_ptr = self as *mut Self;
+
+        if !node.expanded {
+            self.expand(node_idx, node);
+        }
+        match node.result {
+            Some(GameResult::InProgress) => unsafe {
+                let next_idx = self.select_next_node(node_idx, node);
+                let mut next_node = (*self_ptr).search_tree.node_weight_mut(next_idx).unwrap();
+
+                return self.proceed(next_idx, &mut next_node);
+            },
+            _ => self.backup(node_idx, node),
         }
     }
-    fn backup(&mut self) {}
-    fn expand(&mut self, node_idx: NodeIdx) {
-        let mut unexpanded_node = self.search_tree.node_weight(node_idx).unwrap();
-        let parent_edge_idx = unexpanded_node.parent_edge_idx.unwrap();
-        let (parent_idx, _) = self.search_tree.edge_endpoints(parent_edge_idx).unwrap();
-        let parent = self.search_tree.node_weight(parent_idx).unwrap();
-        let edge = self.search_tree.edge_weight(parent_edge_idx).unwrap();
 
-        let state = self.game_expert.apply(&parent.state.unwrap(), &edge.action);
-        unexpanded_node.state = Some(state);
-        let result = self.game_expert.result(&state);
-        unexpanded_node.result = Some(result);
-        match unexpanded_node.result.unwrap() {
-            GameResult::InProgress => {}
-            _ => return self.backup(),
-        }
+    fn select_next_node(&self, idx: NodeIdx, node: &Node<State>) -> NodeIdx {
+        /* in the AGZ paper
+            we maximize
+            Q(s, a) + U(s, a)
+            
+            where
 
-        let (actions, priors) = self.game_expert.legal_actions(&state);
+            U(s, a) = cP(s,a)sqrt(Nb)/(1 + Na)
 
-        for (action, prior) in actions.into_iter().zip(priors.into_iter()) {
-            let leaf_idx = self.search_tree.add_node(Node::new_unexpanded());
-            let edge_idx = self.search_tree.add_edge(
-                node_idx,
-                leaf_idx,
-                Edge {
-                    action,
-                    prior,
-                    visit_count: 0,
-                    total_value: 0.0,
-                    average_value: 0.0,
-                },
-            );
+            where Na is the number of visits of to this edge,
+            and Nb is the number of visits to the parent edge,
+            c is "a constant determining the level of exploration".
+
+        */
+        let parent_edge = self.search_tree
+            .edge_weight(node.parent_edge_idx.unwrap())
+            .unwrap();
+        let n_b = parent_edge.visit_count;
+        let (next_edge_idx, _) = self.search_tree
+            .neighbors(idx)
+            .map(|node_idx| {
+                let node = self.search_tree.node_weight(node_idx).unwrap();
+                let edge_idx = node.parent_edge_idx.unwrap();
+                let edge = self.search_tree.edge_weight(edge_idx).unwrap();
+                let puct = self.cpuct * edge.prior * f32::sqrt(n_b as f32)
+                    / ((1 + edge.visit_count) as f32);
+                (edge_idx, puct)
+            })
+            .max_by(|&(_, puct_a), &(_, puct_b)| {
+                puct_a
+                    .partial_cmp(&puct_b)
+                    .unwrap_or(::std::cmp::Ordering::Equal)
+            })
+            .unwrap();
+
+        let (_, next_node_idx) = self.search_tree.edge_endpoints(next_edge_idx).unwrap();
+        next_node_idx
+    }
+    fn backup(&mut self, node_idx: NodeIdx, node: &mut Node<State>) {}
+    // Create an edge and a node for each possible move from this position
+    fn expand(&mut self, node_idx: NodeIdx, unexpanded_node: &mut Node<State>) {
+        let self_ptr = self as *mut Self;
+        unsafe {
+            let parent_edge_idx = unexpanded_node.parent_edge_idx.unwrap();
+            let (parent_idx, _) = (*self_ptr)
+                .search_tree
+                .edge_endpoints(parent_edge_idx)
+                .unwrap();
+            let parent = (*self_ptr).search_tree.node_weight(parent_idx).unwrap();
+            let edge = (*self_ptr)
+                .search_tree
+                .edge_weight(parent_edge_idx)
+                .unwrap();
+
+            let state = self.game_expert
+                .apply(&parent.state.as_ref().unwrap(), &edge.action);
+            let result = self.game_expert.result(&state);
+
+            match &result {
+                &GameResult::InProgress => {}
+                _ => return,
+            }
+
+            let (actions, priors) = self.game_expert.legal_actions(&state);
+
+            unexpanded_node.state = Some(state);
+            unexpanded_node.result = Some(result);
+            let mut max_prior = 0.0;
+            let mut max_edge: Option<EdgeIdx> = None;
+
+            let mut second_max_prior = 0.0;
+            let mut second_max_edge: Option<EdgeIdx> = None;
+            for (action, prior) in actions.into_iter().zip(priors.into_iter()) {
+                let leaf_idx = self.search_tree.add_node(Node::new_unexpanded());
+                let edge_idx = self.search_tree.add_edge(
+                    node_idx,
+                    leaf_idx,
+                    Edge {
+                        action,
+                        prior,
+                        visit_count: 0,
+                        total_value: 0.0,
+                        average_value: 0.0,
+                    },
+                );
+                if prior > max_prior {
+                    max_prior = prior;
+                    max_edge = Some(edge_idx);
+                } else if prior > second_max_prior {
+                    second_max_prior = prior;
+                    second_max_edge = Some(edge_idx);
+                }
+            }
         }
     }
 }
