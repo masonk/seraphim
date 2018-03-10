@@ -1,6 +1,8 @@
 /* This module uses Monte Carlo Tree Search informed by an expert policy to generate an improved analysis of the game state by sampling future states. This process is called "reading" when human players do it. The computer, however, does it quantitatively, and it reads to the end of the game before scoring a move.
 */
 use petgraph;
+use rand;
+use rand::Rng;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GameResult {
@@ -91,6 +93,7 @@ where
     G: GameExpert<State, Action>,
     Action: PartialEq,
 {
+    rand: rand::ThreadRng,
     game_expert: G,
     search_tree: petgraph::Graph<Node<State>, Edge<Action>>,
     cpuct: f32,        // A constant determining the level of exploration
@@ -121,10 +124,11 @@ where
             ply: 0,
             root_idx,
             readouts: 100,
+            rand: rand::thread_rng(),
         }
     }
 
-    pub fn read_and_apply(&mut self) {
+    pub fn read_and_apply(&mut self) -> Action {
         /*
             At the end of the search AGZ selects a move to play
             in the root position proportional to its exponentiated visit count
@@ -138,33 +142,55 @@ where
             self.read_one(self.root_idx);
         }
 
-        let tau = if self.ply < 30 { 1.0 } else { 0.0001 };
-
-        let total_visit_count: u32 = self.search_tree
+        let visits: Vec<(u32, EdgeIdx, NodeIdx)> = self.search_tree
             .neighbors(self.root_idx)
             .map(|child_idx| {
                 let node = self.search_tree.node_weight(child_idx).unwrap();
                 let edge_idx = node.parent_edge_idx.unwrap();
                 (edge_idx, child_idx)
             })
-            .map(|(edge_idx, _)| {
+            .map(|(edge_idx, node_idx)| {
                 let edge = self.search_tree.edge_weight(edge_idx).unwrap();
-                edge.visit_count
+                (edge.visit_count, edge_idx, node_idx)
             })
-            .sum();
+            .collect();
 
-        let max_edge_idx = self.search_tree
-            .neighbors(self.root_idx)
-            .map(|child_idx| {
-                let node = self.search_tree.node_weight(child_idx).unwrap();
-                let edge_idx = node.parent_edge_idx.unwrap();
-                (edge_idx, child_idx)
-            })
-            .max_by_key(|&(edge_idx, _)| {
-                let edge = self.search_tree.edge_weight(edge_idx).unwrap();
-                edge.visit_count
-            })
-            .unwrap();
+        let total_visit_count: u32 = visits.iter().map(|&(count, _, _)| count).sum();
+        if self.ply < 30 {
+            let rand: f32 = self.rand.gen_range(0.0, 1.0);
+            let mut cum_prob = 0.0;
+            for (count, edge_idx, node_idx) in visits {
+                let prob: f32 = (count as f32) / (total_visit_count as f32);
+                cum_prob += prob;
+
+                if cum_prob > rand {
+                    self.ply += 1;
+                    self.root_idx = node_idx;
+                    let edge = self.search_tree.remove_edge(edge_idx).unwrap();
+                    edge.action;
+                }
+            }
+        } else {
+            // After 30 plys, find the move with the highest visit count
+            let (selected_edge, selected_node) = self.search_tree
+                .neighbors(self.root_idx)
+                .map(|child_idx| {
+                    let node = self.search_tree.node_weight(child_idx).unwrap();
+                    let edge_idx = node.parent_edge_idx.unwrap();
+                    (edge_idx, child_idx)
+                })
+                .max_by_key(|&(edge_idx, _)| {
+                    let edge = self.search_tree.edge_weight(edge_idx).unwrap();
+                    edge.visit_count
+                })
+                .unwrap();
+            //todo: Discard unreachable edges
+            self.ply += 1;
+            self.root_idx = selected_node;
+            let edge = self.search_tree.remove_edge(selected_edge).unwrap();
+            edge.action;
+        }
+        panic!("Didn't select a next action.");
     }
 
     // update the search tree by applying an action.
@@ -193,12 +219,12 @@ where
                 self.expand(node_idx, node);
             }
             match node.result {
-                Some(GameResult::InProgress) => unsafe {
+                Some(GameResult::InProgress) => {
                     let next_idx = self.select_next_node(node_idx, node);
                     let mut next_node = (*self_ptr).search_tree.node_weight_mut(next_idx).unwrap();
 
                     return self.read_one(next_idx);
-                },
+                }
                 None => panic!("Reached a node without a result"),
                 Some(result) => {
                     match result {
@@ -261,7 +287,7 @@ where
                 return;
             }
             let parent_edge_idx = node.parent_edge_idx.unwrap();
-            let mut parent_edge = self.search_tree.edge_weight_mut(parent_edge_idx).unwrap();
+            let parent_edge = self.search_tree.edge_weight_mut(parent_edge_idx).unwrap();
 
             parent_edge.visit_count += 1;
             parent_edge.total_value += reward;

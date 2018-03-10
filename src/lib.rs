@@ -24,3 +24,4 @@ extern crate serde_json;
 #[macro_use]
 extern crate log;
 extern crate petgraph;
+extern crate rand;

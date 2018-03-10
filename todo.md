@@ -1,4 +1,4 @@
-- Get the debugger working when the next insider build hits
-- After changing first move detection, some games can't find a first move - change the `init_from_sgf` function so that it returns an error instead of panic
-- Find out where the first move detection is failing
-- Start on MCTS
+- Get the debugger working 
+- Add a bunch of trace statements for MCTS
+- Implement a simple GameExpert, e.g., tic-tac-toe
+- unit test MCTS
