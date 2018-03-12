@@ -5,6 +5,7 @@
 #![feature(test)]
 
 pub mod go;
+pub mod tictactoe;
 pub mod search;
 
 extern crate gosgf;
@@ -16,12 +17,14 @@ extern crate regex;
 extern crate test;
 extern crate vec_map;
 
-extern crate serde;
+extern crate flexi_logger;
 #[macro_use]
-extern crate serde_derive;
-extern crate serde_json;
-
+extern crate indoc;
 #[macro_use]
 extern crate log;
 extern crate petgraph;
 extern crate rand;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde_json;

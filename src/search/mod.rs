@@ -130,6 +130,10 @@ where
 
     pub fn read_and_apply(&mut self) -> Action {
         /*
+        Read the board by playing out a number of games according to the PUCB MCTS algorithm.
+
+        Select a next move using the AGZ annealing method:
+
             At the end of the search AGZ selects a move to play
             in the root position proportional to its exponentiated visit count
             p(a|s_0) = N(s_0, a)^{1/T} / \sum{b}N(s_0, b)^{1/T},  
@@ -137,6 +141,9 @@ where
             timesteps: the played action becomes the new root node, and other nodes are discarded.
 
             AGZ resigns if its root value and best child value are lower than a threshhold.
+
+        Apply that selection to the search tree by advancing down the tree, and return the picked action
+        so that the GameExpert will know what was picked.
         */
         for _ in 0..self.readouts {
             self.read_one(self.root_idx);
@@ -213,7 +220,7 @@ where
     fn read_one(&mut self, node_idx: NodeIdx) {
         let self_ptr = self as *mut Self;
         unsafe {
-            let mut node = (*self_ptr).search_tree.node_weight_mut(node_idx).unwrap();
+            let node = (*self_ptr).search_tree.node_weight_mut(node_idx).unwrap();
 
             if !node.expanded {
                 self.expand(node_idx, node);

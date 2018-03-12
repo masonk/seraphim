@@ -19,6 +19,8 @@ log = { version = "0.4", features = ["max_level_trace", "release_max_level_error
 flexi_logger = "*"
 petgraph = "*"
 rand = "*"
+indoc = "*"
+
 
 [dependencies.gosgf]
 path = "gosgf"
