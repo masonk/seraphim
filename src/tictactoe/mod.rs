@@ -1,26 +1,3 @@
-// pub trait GameExpert<State, Action>
-// where
-//     State: ::std::hash::Hash,
-// {
-//     fn root(&self) -> State;
-
-//     // TODO: The AGZ paper minibatches the request for legal_actions
-//     // into batches 8. There should definitely be a way of batching these requests
-//     // This has to come after multi-threading the search, since threads block
-//     // while waiting for their batch to accumulate.
-//     fn legal_actions(&self, state: &State) -> (Vec<Action>, Vec<f32>);
-
-//     fn apply(&mut self, state: &State, action: &Action) -> State; // When MCTS choses a legal action from a particular state for the first time, it will call this function to expand a leaf node with a new state.
-
-//     fn to_win(&self, &State) -> f32; // What does think game expert think the *NEXT PLAYER'S* probability of winning the game is, from this position? This function will only be called on States that are GameResult::InProgress.
-//                                      // Todo: Find an interface that allows to_win to lock the thread until enough requests for expert policies have been made to fill a minibatch queue.
-
-//     // The prior probability that this action is the best next action
-//     // Used in the selection phase of the MCTS,
-//     fn prior_probability(&self, action: Action) -> f32;
-
-//     fn result(&self, &State) -> GameResult;
-// }
 use std::fmt;
 use indoc;
 use search;
@@ -29,7 +6,7 @@ use std::sync::{Once, ONCE_INIT};
 
 static INIT: Once = ONCE_INIT;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Hash)]
 enum Mark {
     Circle,
     Cross,
@@ -60,7 +37,7 @@ impl Mark {
         }
     }
 }
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Hash)]
 enum Player {
     Circle,
     Cross,
@@ -97,7 +74,7 @@ struct ParseError {
     msg: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Copy)]
+#[derive(Clone, Debug, PartialEq, Copy, Hash)]
 struct TicTacToeState {
     board: [Mark; 9],
     next_player: Player,
@@ -113,6 +90,7 @@ impl TicTacToeState {
         };
         warn!("Testing warn");
         let mut plys = 0;
+        let mut count = 0;
         for (i, c) in s.chars().filter(|c| !c.is_whitespace()).enumerate().take(9) {
             match c {
                 'x' => {
@@ -136,6 +114,12 @@ impl TicTacToeState {
                     });
                 }
             }
+            count += 1;
+        }
+        if count < 9 {
+            return Err(ParseError {
+                msg: format!("{} only contained {} marks", s, count),
+            });
         }
         if plys % 2 == 0 {
             val.next_player = Player::Cross;
@@ -286,7 +270,7 @@ mod basic {
             o x o
             _ x _
             _ o _"
-        )).expect("Couldn't parse an empty board");
+        )).expect("Couldn't parse");
 
         println!("{}", state);
     }
@@ -299,7 +283,7 @@ mod basic {
             o x o
             _ x x
             o o o"
-        )).expect("Couldn't parse an empty board");
+        )).expect("Couldn't parse");
 
         println!("{}", state);
 
@@ -314,7 +298,7 @@ mod basic {
             o x o
             _ x _
             _ x _"
-        )).expect("Couldn't parse an empty board");
+        )).expect("Couldn't parse");
 
         println!("{}", state);
 
@@ -329,7 +313,7 @@ mod basic {
             x _ x
             o x o
             _ o x"
-        )).expect("Couldn't parse an empty board");
+        )).expect("Couldn't parse");
 
         println!("{}", state);
 
@@ -344,11 +328,22 @@ mod basic {
             _ x o
             _ o _
             o x x"
-        )).expect("Couldn't parse an empty board");
+        )).expect("Couldn't parse");
 
         println!("{}", state);
 
         assert_eq!(state.winner, Some(Player::Circle));
     }
 }
+// pub trait GameExpert<State, Action>
+// where
+//     State: ::std::hash::Hash,
+// {
+//     fn root(&self) -> State;
+//     fn legal_actions(&self, state: &State) -> (Vec<Action>, Vec<f32>);
+//     fn apply(&mut self, state: &State, action: &Action) -> State; // When MCTS choses a legal action from a particular state for the first time, it will call this function to expand a leaf node with a new state.
+//     fn to_win(&self, &State) -> f32;
+//     fn prior_probability(&self, action: Action) -> f32;
+//     fn result(&self, &State) -> GameResult;
+// }
 // impl search::GameExpert<TicTacToeState, TicTacToeMove> for TicTacToePlayer {}
