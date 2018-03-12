@@ -3,7 +3,7 @@ use indoc;
 use search;
 use flexi_logger;
 use std::sync::{Once, ONCE_INIT};
-
+use search::GameExpert;
 static INIT: Once = ONCE_INIT;
 
 #[derive(Debug, Copy, Clone, PartialEq, Hash)]
@@ -13,13 +13,6 @@ enum Mark {
     Empty,
 }
 impl fmt::Display for Mark {
-    /*
-
-|x| | |
-| |o| |
-| |x|x|
-
-    */
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             &Mark::Circle => f.write_str("o"),
@@ -66,8 +59,6 @@ enum GameStatus {
 enum MoveError {
     Occupied,
 }
-#[derive(Clone, Debug, PartialEq, Copy)]
-struct TicTacToeGameExpert {}
 
 #[derive(Clone, Debug, PartialEq)]
 struct ParseError {
@@ -82,13 +73,15 @@ struct TicTacToeState {
 }
 impl TicTacToeState {
     // whitespace is ignored, valid chars are 'x', 'o', "_"
-    pub fn from_str(s: &str) -> Result<Self, ParseError> {
-        let mut val = Self {
+    pub fn new_game() -> Self {
+        Self {
             board: [Mark::Empty; 9],
             next_player: Player::Circle,
             winner: None,
-        };
-        warn!("Testing warn");
+        }
+    }
+    pub fn from_str(s: &str) -> Result<Self, ParseError> {
+        let mut val = Self::new_game();
         let mut plys = 0;
         let mut count = 0;
         for (i, c) in s.chars().filter(|c| !c.is_whitespace()).enumerate().take(9) {
@@ -230,27 +223,94 @@ impl fmt::Display for TicTacToeState {
     }
 }
 
-struct TicTacToeMove {}
+#[derive(Clone, Debug, PartialEq, Copy)]
+pub struct TTTGe {}
+impl GameExpert<TicTacToeState, usize> for TTTGe {
+    fn root(&self) -> TicTacToeState {
+        TicTacToeState::new_game()
+    }
+
+    fn legal_actions(&self, state: &TicTacToeState) -> (Vec<usize>, Vec<f32>) {
+        let actions = state
+            .board
+            .iter()
+            .enumerate()
+            .filter(|&(_, s)| match s {
+                &Mark::Empty => true,
+                _ => false,
+            })
+            .map(|(i, _)| i)
+            .collect::<Vec<usize>>();
+
+        let len = actions.len() as f32;
+        // For the game of tic tac toe, no real expertise is needed.
+        // Just consider all actions and play to the end of the game.
+        let probs = actions.iter().map(|_| 1.0 / len).collect::<Vec<f32>>();
+        (actions, probs)
+    }
+    fn apply(&mut self, state: &TicTacToeState, action: &usize) -> TicTacToeState {
+        let mut clone = state.clone();
+        clone.play(*action).unwrap();
+        clone
+    }
+    fn to_win(&self, state: &TicTacToeState) -> f32 {
+        0.5
+    }
+    fn result(&self, state: &TicTacToeState) -> search::GameResult {
+        state
+            .winner
+            .map_or(search::GameResult::InProgress, |winner| {
+                if state.next_player == winner.other() {
+                    return search::GameResult::LastPlayerWon;
+                }
+                search::GameResult::LastPlayerLost
+            })
+    }
+}
+fn setup_test() {
+    INIT.call_once(|| {
+        init_env_logger();
+    });
+}
+
+fn init_env_logger() {
+    flexi_logger::Logger::with_env()
+        .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
+        .o_duplicate_info(true)
+        .start()
+        .unwrap()
+}
+
+#[cfg(test)]
+mod expert {
+    use super::*;
+
+    #[test]
+    fn init_game_expert() {
+        setup_test();
+        let mut game_expert = TTTGe {};
+        let mut game = TicTacToeState::new_game();
+        let mut search = search::SearchTree::init(game_expert);
+
+        loop {
+            if let Some(winner) = game.winner {
+                trace!("{:?} won", winner);
+                break;
+            }
+            let next = search.read_and_apply();
+            game.play(next);
+        }
+    }
+
+}
 
 #[cfg(test)]
 mod basic {
     use super::*;
-    fn setup() {
-        INIT.call_once(|| {
-            init_env_logger();
-        });
-    }
 
-    fn init_env_logger() {
-        flexi_logger::Logger::with_env()
-            .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
-            .o_duplicate_info(true)
-            .start()
-            .unwrap()
-    }
     #[test]
     fn parse_empty_board() {
-        setup();
+        setup_test();
         let state = TicTacToeState::from_str(indoc!(
             "\
             _ _ _
@@ -264,7 +324,7 @@ mod basic {
 
     #[test]
     fn parse_a_board() {
-        setup();
+        setup_test();
         let state = TicTacToeState::from_str(indoc!(
             "\
             o x o
@@ -277,7 +337,7 @@ mod basic {
 
     #[test]
     fn o_wins_row() {
-        setup();
+        setup_test();
         let state = TicTacToeState::from_str(indoc!(
             "\
             o x o
@@ -292,7 +352,7 @@ mod basic {
 
     #[test]
     fn x_wins_col() {
-        setup();
+        setup_test();
         let state = TicTacToeState::from_str(indoc!(
             "\
             o x o
@@ -307,7 +367,7 @@ mod basic {
 
     #[test]
     fn x_wins_nw_diag() {
-        setup();
+        setup_test();
         let state = TicTacToeState::from_str(indoc!(
             "\
             x _ x
@@ -322,7 +382,7 @@ mod basic {
 
     #[test]
     fn o_wins_ne_diag() {
-        setup();
+        setup_test();
         let state = TicTacToeState::from_str(indoc!(
             "\
             _ x o
@@ -335,15 +395,3 @@ mod basic {
         assert_eq!(state.winner, Some(Player::Circle));
     }
 }
-// pub trait GameExpert<State, Action>
-// where
-//     State: ::std::hash::Hash,
-// {
-//     fn root(&self) -> State;
-//     fn legal_actions(&self, state: &State) -> (Vec<Action>, Vec<f32>);
-//     fn apply(&mut self, state: &State, action: &Action) -> State; // When MCTS choses a legal action from a particular state for the first time, it will call this function to expand a leaf node with a new state.
-//     fn to_win(&self, &State) -> f32;
-//     fn prior_probability(&self, action: Action) -> f32;
-//     fn result(&self, &State) -> GameResult;
-// }
-// impl search::GameExpert<TicTacToeState, TicTacToeMove> for TicTacToePlayer {}

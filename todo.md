@@ -1,4 +1,4 @@
-- Get the debugger working 
 - Add a bunch of trace statements for MCTS
-- Implement a simple GameExpert, e.g., tic-tac-toe
+- debug MCTS
 - unit test MCTS
+- Get the debugger working 

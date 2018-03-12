@@ -43,20 +43,17 @@ where
 {
     fn root(&self) -> State;
 
-    // TODO: The AGZ paper minibatches the request for legal_actions
-    // into batches 8. There should definitely be a way of batching these requests
+    // TODO: The AGZ paper minibatches the request for expert policies (the Vec<f32> here)
+    // into 8 batches. There should be a way of batching these requests
     // This has to come after multi-threading the search, since threads block
     // while waiting for their batch to accumulate.
     fn legal_actions(&self, state: &State) -> (Vec<Action>, Vec<f32>);
 
     fn apply(&mut self, state: &State, action: &Action) -> State; // When MCTS choses a legal action from a particular state for the first time, it will call this function to expand a leaf node with a new state.
 
-    fn to_win(&self, &State) -> f32; // What does think game expert think the *NEXT PLAYER'S* probability of winning the game is, from this position? This function will only be called on States that are GameResult::InProgress.
-                                     // Todo: Find an interface that allows to_win to lock the thread until enough requests for expert policies have been made to fill a minibatch queue.
+    // What does the game expert think the *NEXT PLAYER'S* probability of winning the game is, from this position? This function will only be called on States that are GameResult::InProgress.
 
-    // The prior probability that this action is the best next action
-    // Used in the selection phase of the MCTS,
-    fn prior_probability(&self, action: Action) -> f32;
+    fn to_win(&self, &State) -> f32;
 
     fn result(&self, &State) -> GameResult;
 }
