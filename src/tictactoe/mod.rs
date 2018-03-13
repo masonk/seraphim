@@ -4,6 +4,7 @@ use search;
 use flexi_logger;
 use std::sync::{Once, ONCE_INIT};
 use search::GameExpert;
+use search::GameResult;
 static INIT: Once = ONCE_INIT;
 
 #[derive(Debug, Copy, Clone, PartialEq, Hash)]
@@ -49,11 +50,6 @@ impl Player {
         }
     }
 }
-#[derive(Clone, Debug, PartialEq, Copy)]
-enum GameStatus {
-    InProgress,
-    Terminated,
-}
 
 #[derive(Clone, Debug, PartialEq, Copy)]
 enum MoveError {
@@ -69,7 +65,8 @@ struct ParseError {
 struct TicTacToeState {
     board: [Mark; 9],
     next_player: Player,
-    winner: Option<Player>,
+    status: GameResult,
+    plys: usize,
 }
 impl TicTacToeState {
     // whitespace is ignored, valid chars are 'x', 'o', "_"
@@ -77,7 +74,8 @@ impl TicTacToeState {
         Self {
             board: [Mark::Empty; 9],
             next_player: Player::Circle,
-            winner: None,
+            status: GameResult::InProgress,
+            plys: 0,
         }
     }
     pub fn from_str(s: &str) -> Result<Self, ParseError> {
@@ -114,6 +112,7 @@ impl TicTacToeState {
                 msg: format!("{} only contained {} marks", s, count),
             });
         }
+        val.plys = plys;
         if plys % 2 == 0 {
             val.next_player = Player::Cross;
         } else {
@@ -126,12 +125,12 @@ impl TicTacToeState {
         self.next_player.mark()
     }
 
-    fn play(&mut self, idx: usize) -> Result<GameStatus, MoveError> {
+    fn play(&mut self, idx: usize) -> Result<(), MoveError> {
         let game_status = self.place(idx, self.next_player.mark())?;
         self.next_player = self.next_player.other();
-        Ok(game_status)
+        Ok(())
     }
-    fn place(&mut self, idx: usize, mark: Mark) -> Result<GameStatus, MoveError> {
+    fn place(&mut self, idx: usize, mark: Mark) -> Result<(), MoveError> {
         if self.board[idx] != Mark::Empty {
             trace!(
                 "Tried to place {} at {} but that was occupied by {}\n{}",
@@ -145,11 +144,15 @@ impl TicTacToeState {
         self.board[idx] = mark;
         if self.check_winner(idx, mark) {
             trace!("{} at {} won the game \n{}", mark, idx, self);
-            self.winner = Some(mark.player());
-            return Ok(GameStatus::Terminated);
+            self.status = GameResult::LastPlayerWon;
         }
         trace!("{} at {}\n{}", mark, idx, self);
-        Ok(GameStatus::InProgress)
+        self.plys += 1;
+        self.status = match self.plys {
+            9 => GameResult::TerminatedWithoutResult,
+            _ => GameResult::InProgress,
+        };
+        Ok(())
     }
 
     fn get(&self, idx: usize) -> Mark {
@@ -257,14 +260,7 @@ impl GameExpert<TicTacToeState, usize> for TTTGe {
         0.5
     }
     fn result(&self, state: &TicTacToeState) -> search::GameResult {
-        state
-            .winner
-            .map_or(search::GameResult::InProgress, |winner| {
-                if state.next_player == winner.other() {
-                    return search::GameResult::LastPlayerWon;
-                }
-                search::GameResult::LastPlayerLost
-            })
+        state.status
     }
 }
 fn setup_test() {
@@ -293,12 +289,13 @@ mod expert {
         let mut search = search::SearchTree::init(game_expert);
 
         loop {
-            if let Some(winner) = game.winner {
-                trace!("{:?} won", winner);
+            if let GameResult::InProgress = game.status {
+                let next = search.read_and_apply();
+                game.play(next);
+            } else {
+                trace!("{:?}", game.status);
                 break;
             }
-            let next = search.read_and_apply();
-            game.play(next);
         }
     }
 
@@ -345,9 +342,10 @@ mod basic {
             o o o"
         )).expect("Couldn't parse");
 
-        println!("{}", state);
+        trace!("{}", state);
 
-        assert_eq!(state.winner, Some(Player::Circle));
+        assert_eq!(state.status, GameResult::LastPlayerWon);
+        assert_eq!(state.next_player, Player::Cross);
     }
 
     #[test]
@@ -360,9 +358,7 @@ mod basic {
             _ x _"
         )).expect("Couldn't parse");
 
-        println!("{}", state);
-
-        assert_eq!(state.winner, Some(Player::Cross));
+        trace!("{}", state);
     }
 
     #[test]
@@ -375,9 +371,10 @@ mod basic {
             _ o x"
         )).expect("Couldn't parse");
 
-        println!("{}", state);
+        trace!("{}", state);
 
-        assert_eq!(state.winner, Some(Player::Cross));
+        assert_eq!(state.status, GameResult::LastPlayerWon);
+        assert_eq!(state.next_player, Player::Circle);
     }
 
     #[test]
@@ -390,8 +387,9 @@ mod basic {
             o x x"
         )).expect("Couldn't parse");
 
-        println!("{}", state);
+        trace!("{}", state);
 
-        assert_eq!(state.winner, Some(Player::Circle));
+        assert_eq!(state.status, GameResult::LastPlayerWon);
+        assert_eq!(state.next_player, Player::Cross);
     }
 }

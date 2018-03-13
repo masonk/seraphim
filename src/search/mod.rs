@@ -4,7 +4,7 @@ use petgraph;
 use rand;
 use rand::Rng;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GameResult {
     InProgress,
     TerminatedWithoutResult,
@@ -60,7 +60,13 @@ where
 
 type NodeIdx = petgraph::graph::NodeIndex<petgraph::graph::DefaultIx>;
 type EdgeIdx = petgraph::graph::EdgeIndex<petgraph::graph::DefaultIx>;
-struct Edge<Action> {
+
+#[derive(Debug)]
+
+struct Edge<Action>
+where
+    Action: PartialEq + ::std::fmt::Debug,
+{
     action: Action,     // The Action that this edge represents.
     prior: f32, // P(s, a). The prior probability of choosing this node, derived from the expert guess.
     visit_count: u32, // N(s, a) in the AGZ paper. How many times has the action that this edge represents been tried so far?
@@ -68,61 +74,82 @@ struct Edge<Action> {
     average_value: f32, // Q(s, a). The average value of an action over all the times it's been tried. Equal to total_value / visit_count.
 }
 
-struct Node<State> {
+#[derive(Debug)]
+struct Node<State>
+where
+    State: ::std::fmt::Debug,
+{
     expanded: bool,
     parent_edge_idx: Option<EdgeIdx>,
-    state: Option<State>,
-    result: Option<GameResult>,
+    state: State,
 }
-impl<State> Node<State> {
-    fn new_unexpanded() -> Self {
+impl<State> Node<State>
+where
+    State: ::std::fmt::Debug,
+{
+    fn new_unexpanded(state: State) -> Self {
         Node {
             expanded: false,
             parent_edge_idx: None,
-            state: None,
-            result: None,
+            state: state,
         }
     }
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchTreeOptions {
+    cpuct: f32, // a constant determining the tradeoff between exploration and exploitation; .25 in the AGZ paper. Higher numbers bias the search towards less-explored nodes, lower numbers bias the search towards more promising nodes.
+    readouts: u32, // how many games to play when search for a single move; 1600 in the AGZ paper
+    tempering_point: u32, // how many plays should progress until we lower the temperature of move selection from 1 to ~0. 30 in the AGZ paper
+}
+impl SearchTreeOptions {
+    pub fn defaults() -> Self {
+        Self {
+            cpuct: 0.25,
+            readouts: 1600,
+            tempering_point: 30,
+        }
+    }
+}
+#[derive(Debug)]
 pub struct SearchTree<G, State, Action>
 where
-    State: ::std::hash::Hash,
+    State: ::std::hash::Hash + ::std::fmt::Debug,
     G: GameExpert<State, Action>,
-    Action: PartialEq,
+    Action: PartialEq + ::std::hash::Hash + ::std::fmt::Debug,
 {
     rand: rand::ThreadRng,
     game_expert: G,
     search_tree: petgraph::Graph<Node<State>, Edge<Action>>,
-    cpuct: f32,        // A constant determining the level of exploration
     ply: u32,          // how many plys have been played at the root_idx
     root_idx: NodeIdx, // cur
-    readouts: u32, // how many readouts to perform for each move. AGZ set this to 1600 without explanation. Leela uses 1000 in training.
+    options: SearchTreeOptions,
 }
 
 impl<G, State, Action> SearchTree<G, State, Action>
 where
-    State: ::std::hash::Hash,
+    State: ::std::hash::Hash + ::std::fmt::Debug,
     G: GameExpert<State, Action>,
-    Action: PartialEq,
+    Action: PartialEq + ::std::hash::Hash + ::std::fmt::Debug,
 {
     // Start a new game that will be played by iterative searching
-    pub fn init(game_expert: G) -> Self {
+    pub fn init_with_options(game_expert: G, options: SearchTreeOptions) -> Self {
         let mut search_tree = petgraph::Graph::new();
         let root_state = game_expert.root();
-        let mut root_node = Node::new_unexpanded();
-        root_node.state = Some(root_state);
-
+        let mut root_node = Node::new_unexpanded(root_state);
         let root_idx = search_tree.add_node(root_node);
 
         Self {
             game_expert,
             search_tree,
-            cpuct: 0.25,
+            options,
             ply: 0,
             root_idx,
-            readouts: 100,
             rand: rand::thread_rng(),
         }
+    }
+    pub fn init(game_expert: G) -> Self {
+        Self::init_with_options(game_expert, SearchTreeOptions::defaults())
     }
 
     pub fn read_and_apply(&mut self) -> Action {
@@ -142,7 +169,7 @@ where
         Apply that selection to the search tree by advancing down the tree, and return the picked action
         so that the GameExpert will know what was picked.
         */
-        for _ in 0..self.readouts {
+        for _ in 0..self.options.readouts {
             self.read_one(self.root_idx);
         }
 
@@ -160,7 +187,7 @@ where
             .collect();
 
         let total_visit_count: u32 = visits.iter().map(|&(count, _, _)| count).sum();
-        if self.ply < 30 {
+        if self.ply < self.options.tempering_point {
             let rand: f32 = self.rand.gen_range(0.0, 1.0);
             let mut cum_prob = 0.0;
             for (count, edge_idx, node_idx) in visits {
@@ -171,7 +198,7 @@ where
                     self.ply += 1;
                     self.root_idx = node_idx;
                     let edge = self.search_tree.remove_edge(edge_idx).unwrap();
-                    edge.action;
+                    return edge.action;
                 }
             }
         } else {
@@ -192,7 +219,7 @@ where
             self.ply += 1;
             self.root_idx = selected_node;
             let edge = self.search_tree.remove_edge(selected_edge).unwrap();
-            edge.action;
+            return edge.action;
         }
         panic!("Didn't select a next action.");
     }
@@ -218,25 +245,22 @@ where
         let self_ptr = self as *mut Self;
         unsafe {
             let node = (*self_ptr).search_tree.node_weight_mut(node_idx).unwrap();
-
-            if !node.expanded {
-                self.expand(node_idx, node);
-            }
-            match node.result {
-                Some(GameResult::InProgress) => {
+            let result = self.game_expert.result(&node.state);
+            match result {
+                GameResult::InProgress => {
+                    if !node.expanded {
+                        self.expand(node_idx, node);
+                    }
                     let next_idx = self.select_next_node(node_idx, node);
                     let mut next_node = (*self_ptr).search_tree.node_weight_mut(next_idx).unwrap();
 
                     return self.read_one(next_idx);
                 }
-                None => panic!("Reached a node without a result"),
-                Some(result) => {
+                _ => {
                     match result {
                         GameResult::LastPlayerLost => self.backup(-1.0, node_idx, node),
                         GameResult::LastPlayerWon => self.backup(1.0, node_idx, node),
-                        GameResult::TerminatedWithoutResult => {
-                            debug!("Skipping backup for a GameResult::TerminatedWithoutResult.")
-                        }
+                        GameResult::TerminatedWithoutResult => self.backup(0.0, node_idx, node),
                         GameResult::InProgress => {
                             warn!("Tried to backup an in-progress game. Algorithm error. ")
                         }
@@ -260,17 +284,26 @@ where
             c is "a constant determining the level of exploration".
 
         */
-        let parent_edge = self.search_tree
-            .edge_weight(node.parent_edge_idx.unwrap())
-            .unwrap();
-        let n_b = parent_edge.visit_count;
+        let n_b: u32 = self.search_tree
+            .neighbors(self.root_idx)
+            .map(|child_idx| {
+                let node = self.search_tree.node_weight(child_idx).unwrap();
+                let edge_idx = node.parent_edge_idx.unwrap();
+                edge_idx
+            })
+            .map(|edge_idx| {
+                let edge = self.search_tree.edge_weight(edge_idx).unwrap();
+                edge.visit_count
+            })
+            .sum();
+
         let (next_edge_idx, _) = self.search_tree
             .neighbors(idx)
             .map(|node_idx| {
                 let node = self.search_tree.node_weight(node_idx).unwrap();
                 let edge_idx = node.parent_edge_idx.unwrap();
                 let edge = self.search_tree.edge_weight(edge_idx).unwrap();
-                let puct = self.cpuct * edge.prior * f32::sqrt(n_b as f32)
+                let puct = self.options.cpuct * edge.prior * f32::sqrt(n_b as f32)
                     / ((1 + edge.visit_count) as f32);
                 (edge_idx, puct)
             })
@@ -287,7 +320,7 @@ where
     fn backup(&mut self, reward: f32, node_idx: NodeIdx, node: &mut Node<State>) {
         let self_ptr = self as *mut Self;
         unsafe {
-            if node.parent_edge_idx.is_none() {
+            if node_idx == self.root_idx {
                 return;
             }
             let parent_edge_idx = node.parent_edge_idx.unwrap();
@@ -307,37 +340,27 @@ where
     fn expand(&mut self, node_idx: NodeIdx, unexpanded_node: &mut Node<State>) {
         let self_ptr = self as *mut Self;
         unsafe {
-            let parent_edge_idx = unexpanded_node.parent_edge_idx.unwrap();
-            let (parent_idx, _) = (*self_ptr)
-                .search_tree
-                .edge_endpoints(parent_edge_idx)
-                .unwrap();
-            let parent = (*self_ptr).search_tree.node_weight(parent_idx).unwrap();
-            let edge = (*self_ptr)
-                .search_tree
-                .edge_weight(parent_edge_idx)
-                .unwrap();
-
-            let state = self.game_expert
-                .apply(&parent.state.as_ref().unwrap(), &edge.action);
-            let result = self.game_expert.result(&state);
+            let state = &unexpanded_node.state;
+            let result = self.game_expert.result(state);
 
             match &result {
                 &GameResult::InProgress => {}
-                _ => return,
+                _ => {
+                    return;
+                }
             }
 
             let (actions, priors) = self.game_expert.legal_actions(&state);
 
-            unexpanded_node.state = Some(state);
-            unexpanded_node.result = Some(result);
             let mut max_prior = 0.0;
             let mut max_edge: Option<EdgeIdx> = None;
 
             let mut second_max_prior = 0.0;
             let mut second_max_edge: Option<EdgeIdx> = None;
             for (action, prior) in actions.into_iter().zip(priors.into_iter()) {
-                let leaf_idx = self.search_tree.add_node(Node::new_unexpanded());
+                let state = self.game_expert.apply(state, &action);
+                let leaf_idx = self.search_tree.add_node(Node::new_unexpanded(state));
+
                 let edge_idx = self.search_tree.add_edge(
                     node_idx,
                     leaf_idx,
@@ -349,6 +372,7 @@ where
                         average_value: 0.0,
                     },
                 );
+                self.search_tree[leaf_idx].parent_edge_idx = Some(edge_idx);
                 if prior > max_prior {
                     max_prior = prior;
                     max_edge = Some(edge_idx);
@@ -357,6 +381,7 @@ where
                     second_max_edge = Some(edge_idx);
                 }
             }
+            unexpanded_node.expanded = true;
         }
     }
 }
