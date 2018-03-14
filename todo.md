@@ -1,3 +1,4 @@
+- CLear up the heisenbug where sometimes state is full of o's
 - Add a bunch of trace statements for MCTS
 - debug MCTS
 - unit test MCTS

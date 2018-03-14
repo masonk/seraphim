@@ -82,20 +82,27 @@ impl TicTacToeState {
         let mut val = Self::new_game();
         let mut plys = 0;
         let mut count = 0;
+        let mut winner = GameResult::InProgress;
         for (i, c) in s.chars().filter(|c| !c.is_whitespace()).enumerate().take(9) {
             match c {
                 'x' => {
-                    let res = val.place(i, Mark::Cross);
-                    res.map_err(|err| ParseError {
-                        msg: format!("{:?} when adding move {} @ {}", err, c, i),
-                    })?;
+                    val.place_and_check_winner(i, Mark::Cross)
+                        .map_err(|err| ParseError {
+                            msg: format!("{:?} when adding move {} @ {}", err, c, i),
+                        })?;
+                    if winner == GameResult::InProgress {
+                        winner = val.status;
+                    }
                     plys += 1;
                 }
                 'o' => {
-                    let res = val.place(i, Mark::Circle);
-                    res.map_err(|err| ParseError {
-                        msg: format!("{:?} when parsing move {} @ {}", err, c, i),
-                    })?;
+                    val.place_and_check_winner(i, Mark::Circle)
+                        .map_err(|err| ParseError {
+                            msg: format!("{:?} when parsing move {} @ {}", err, c, i),
+                        })?;
+                    if winner == GameResult::InProgress {
+                        winner = val.status;
+                    }
                     plys += 1;
                 }
                 '_' => {}
@@ -113,6 +120,7 @@ impl TicTacToeState {
             });
         }
         val.plys = plys;
+        val.status = winner;
         if plys % 2 == 0 {
             val.next_player = Player::Cross;
         } else {
@@ -123,11 +131,11 @@ impl TicTacToeState {
     }
 
     fn play(&mut self, idx: usize) -> Result<(), MoveError> {
-        self.place(idx, self.next_player.mark())?;
+        self.place_and_check_winner(idx, self.next_player.mark())?;
         self.next_player = self.next_player.other();
         Ok(())
     }
-    fn place(&mut self, idx: usize, mark: Mark) -> Result<(), MoveError> {
+    fn place_unchecked(&mut self, idx: usize, mark: Mark) -> Result<(), MoveError> {
         if self.board[idx] != Mark::Empty {
             trace!(
                 "Tried to place {} at {} but that was occupied by {}\n{}",
@@ -139,9 +147,14 @@ impl TicTacToeState {
             return Err(MoveError::Occupied);
         }
         self.board[idx] = mark;
+        Ok(())
+    }
+    fn place_and_check_winner(&mut self, idx: usize, mark: Mark) -> Result<(), MoveError> {
+        self.place_unchecked(idx, mark)?;
         if self.check_winner(idx, mark) {
             trace!("{} at {} won the game \n{}", mark, idx, self);
             self.status = GameResult::LastPlayerWon;
+            return Ok(());
         }
         trace!("{} at {}\n{}", mark, idx, self);
         self.plys += 1;
@@ -286,14 +299,15 @@ mod expert {
         let game_expert = TTTGe {};
         let mut game = TicTacToeState::new_game();
         let mut options = search::SearchTreeOptions::defaults();
-        options.readouts = 30;
-
-        let mut search = search::SearchTree::init(game_expert);
+        options.readouts = 100;
+        options.tempering_point = 0;
+        let mut search = search::SearchTree::init_with_options(game_expert, options);
 
         loop {
             if let GameResult::InProgress = game.status {
                 let next = search.read_and_apply();
                 game.play(next).unwrap();
+                println!("{}", game);
             } else {
                 trace!("{:?}", game.status);
                 break;
