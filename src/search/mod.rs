@@ -190,10 +190,10 @@ where
         if self.ply < self.options.tempering_point {
             let rand: f32 = self.rand.gen_range(0.0, 1.0);
             let mut cum_prob = 0.0;
+
             for (count, edge_idx, node_idx) in visits {
                 let prob: f32 = (count as f32) / (total_visit_count as f32);
                 cum_prob += prob;
-
                 if cum_prob > rand {
                     self.ply += 1;
                     self.root_idx = node_idx;
@@ -216,6 +216,7 @@ where
                 })
                 .unwrap();
             //todo: Discard unreachable edges
+            trace!("{:?} {:?}", selected_edge, selected_node);
             self.ply += 1;
             self.root_idx = selected_node;
             let edge = self.search_tree.remove_edge(selected_edge).unwrap();
@@ -295,7 +296,6 @@ where
                 edge.visit_count
             })
             .sum();
-
         let (next_edge_idx, _) = self.search_tree
             .neighbors(idx)
             .map(|node_idx| {
@@ -303,7 +303,8 @@ where
                 let edge_idx = node.parent_edge_idx.unwrap();
                 let edge = self.search_tree.edge_weight(edge_idx).unwrap();
                 let puct = self.options.cpuct * edge.prior * f32::sqrt(n_b as f32)
-                    / ((1 + edge.visit_count) as f32);
+                    / ((1 + edge.visit_count) as f32)
+                    + edge.average_value;
                 (edge_idx, puct)
             })
             .max_by(|&(_, puct_a), &(_, puct_b)| {

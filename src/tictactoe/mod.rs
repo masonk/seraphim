@@ -299,7 +299,7 @@ mod expert {
         let game_expert = TTTGe {};
         let mut game = TicTacToeState::new_game();
         let mut options = search::SearchTreeOptions::defaults();
-        options.readouts = 100;
+        options.readouts = 1500;
         options.tempering_point = 0;
         let mut search = search::SearchTree::init_with_options(game_expert, options);
 
