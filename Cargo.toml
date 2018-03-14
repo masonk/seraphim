@@ -3,9 +3,6 @@ name = "seraph"
 version = "0.1.0"
 authors = ["Mason Kramer <mason.kramer@gmail.com>"]
 
-[dependencies.lazy_static]
-version = "0.1.1"
-
 [dependencies]
 left-pad = "1.0.0"
 regex = "0.2.0"
@@ -20,7 +17,7 @@ flexi_logger = "*"
 petgraph = "*"
 rand = "*"
 indoc = "*"
-
+lazy_static = "*"
 
 [dependencies.gosgf]
 path = "gosgf"
@@ -32,5 +29,5 @@ lto = true
 lto = true
 
 [profile.dev]
-opt-level = 1
+opt-level = 0
 codegen-units = 4

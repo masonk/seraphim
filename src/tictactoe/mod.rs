@@ -5,7 +5,7 @@ use flexi_logger;
 use std::sync::{Once, ONCE_INIT};
 use search::GameExpert;
 use search::GameResult;
-static INIT: Once = ONCE_INIT;
+static _INIT: Once = ONCE_INIT;
 
 #[derive(Debug, Copy, Clone, PartialEq, Hash)]
 enum Mark {
@@ -22,15 +22,15 @@ impl fmt::Display for Mark {
         }
     }
 }
-impl Mark {
-    fn player(&self) -> Player {
-        match self {
-            &Mark::Circle => Player::Circle,
-            &Mark::Cross => Player::Cross,
-            _ => panic!("No player for Empty"),
-        }
-    }
-}
+// impl Mark {
+//     fn player(&self) -> Player {
+//         match self {
+//             &Mark::Circle => Player::Circle,
+//             &Mark::Cross => Player::Cross,
+//             _ => panic!("No player for Empty"),
+//         }
+//     }
+// }
 #[derive(Debug, Copy, Clone, PartialEq, Hash)]
 enum Player {
     Circle,
@@ -121,12 +121,9 @@ impl TicTacToeState {
 
         Ok(val)
     }
-    fn next_mark(&self) -> Mark {
-        self.next_player.mark()
-    }
 
     fn play(&mut self, idx: usize) -> Result<(), MoveError> {
-        let game_status = self.place(idx, self.next_player.mark())?;
+        self.place(idx, self.next_player.mark())?;
         self.next_player = self.next_player.other();
         Ok(())
     }
@@ -167,15 +164,7 @@ impl TicTacToeState {
         self.check_row(idx, mark) || self.check_col(idx, mark) || self.check_diags(idx, mark)
     }
 
-    fn match_three(
-        &self,
-        t: &str,
-        idx: usize,
-        mark: Mark,
-        first: usize,
-        second: usize,
-        third: usize,
-    ) -> bool {
+    fn match_three(&self, t: &str, mark: Mark, first: usize, second: usize, third: usize) -> bool {
         let matches =
             self.matches(first, mark) && self.matches(second, mark) && self.matches(third, mark);
 
@@ -194,19 +183,19 @@ impl TicTacToeState {
     }
     fn check_row(&self, idx: usize, mark: Mark) -> bool {
         let o = (idx / 3) * 3;
-        self.match_three(&"row", idx, mark, 0 + o, 1 + o, 2 + o)
+        self.match_three(&"row", mark, 0 + o, 1 + o, 2 + o)
     }
     fn check_col(&self, idx: usize, mark: Mark) -> bool {
         let o = (idx + 3) % 3;
 
-        self.match_three(&"col", idx, mark, 0 + o, 3 + o, 6 + o)
+        self.match_three(&"col", mark, 0 + o, 3 + o, 6 + o)
     }
     fn check_diags(&self, idx: usize, mark: Mark) -> bool {
-        if (idx + 4) % 4 == 0 && self.match_three(&"nw-se", idx, mark, 0, 4, 8) {
+        if (idx + 4) % 4 == 0 && self.match_three(&"nw-se", mark, 0, 4, 8) {
             return true;
         }
         match idx {
-            2 | 4 | 6 => self.match_three(&"sw-ne", idx, mark, 2, 4, 6),
+            2 | 4 | 6 => self.match_three(&"sw-ne", mark, 2, 4, 6),
             _ => false,
         }
     }
@@ -247,29 +236,39 @@ impl GameExpert<TicTacToeState, usize> for TTTGe {
 
         let len = actions.len() as f32;
         // For the game of tic tac toe, no real expertise is needed.
-        // Just consider all actions and play to the end of the game.
+        // Just consider all actions equally probable.
+        // MCTS can fully exhaust the state space of TTT in readouts of 20-30 games per move.
         let probs = actions.iter().map(|_| 1.0 / len).collect::<Vec<f32>>();
+
         (actions, probs)
     }
     fn apply(&mut self, state: &TicTacToeState, action: &usize) -> TicTacToeState {
         let mut clone = state.clone();
-        clone.play(*action).unwrap();
+        if *state != clone {}
+        match clone.play(*action) {
+            Ok(__) => {}
+            Err(err) => {
+                println!("{}->\n{}\naction: {}", state, clone, action);
+                panic!("{:?}", err);
+            }
+        }
         clone
     }
-    fn to_win(&self, state: &TicTacToeState) -> f32 {
+    fn to_win(&self, _: &TicTacToeState) -> f32 {
         0.5
     }
     fn result(&self, state: &TicTacToeState) -> search::GameResult {
         state.status
     }
 }
-fn setup_test() {
-    INIT.call_once(|| {
-        init_env_logger();
+
+fn _setup_test() {
+    _INIT.call_once(|| {
+        _init_env_logger();
     });
 }
 
-fn init_env_logger() {
+fn _init_env_logger() {
     flexi_logger::Logger::with_env()
         .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
         .o_duplicate_info(true)
@@ -283,15 +282,18 @@ mod expert {
 
     #[test]
     fn init_game_expert() {
-        setup_test();
-        let mut game_expert = TTTGe {};
+        _setup_test();
+        let game_expert = TTTGe {};
         let mut game = TicTacToeState::new_game();
+        let mut options = search::SearchTreeOptions::defaults();
+        options.readouts = 30;
+
         let mut search = search::SearchTree::init(game_expert);
 
         loop {
             if let GameResult::InProgress = game.status {
                 let next = search.read_and_apply();
-                game.play(next);
+                game.play(next).unwrap();
             } else {
                 trace!("{:?}", game.status);
                 break;
@@ -307,7 +309,7 @@ mod basic {
 
     #[test]
     fn parse_empty_board() {
-        setup_test();
+        _setup_test();
         let state = TicTacToeState::from_str(indoc!(
             "\
             _ _ _
@@ -321,7 +323,7 @@ mod basic {
 
     #[test]
     fn parse_a_board() {
-        setup_test();
+        _setup_test();
         let state = TicTacToeState::from_str(indoc!(
             "\
             o x o
@@ -334,7 +336,7 @@ mod basic {
 
     #[test]
     fn o_wins_row() {
-        setup_test();
+        _setup_test();
         let state = TicTacToeState::from_str(indoc!(
             "\
             o x o
@@ -350,7 +352,7 @@ mod basic {
 
     #[test]
     fn x_wins_col() {
-        setup_test();
+        _setup_test();
         let state = TicTacToeState::from_str(indoc!(
             "\
             o x o
@@ -363,7 +365,7 @@ mod basic {
 
     #[test]
     fn x_wins_nw_diag() {
-        setup_test();
+        _setup_test();
         let state = TicTacToeState::from_str(indoc!(
             "\
             x _ x
@@ -379,7 +381,7 @@ mod basic {
 
     #[test]
     fn o_wins_ne_diag() {
-        setup_test();
+        _setup_test();
         let state = TicTacToeState::from_str(indoc!(
             "\
             _ x o

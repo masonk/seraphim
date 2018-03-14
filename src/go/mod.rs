@@ -741,14 +741,14 @@ pub mod sgf_replays {
 
     #[test]
     fn game_248_has_superko() {
-        assert_superko(PathBuf::from("data/jgdb/./sgf/test/0000/00000248.sgf"))
+        _assert_superko(PathBuf::from("data/jgdb/./sgf/test/0000/00000248.sgf"))
     }
 
     #[test]
     fn game_836_has_superko() {
-        assert_superko(PathBuf::from("data/jgdb/./sgf/test/0000/00000836.sgf"))
+        _assert_superko(PathBuf::from("data/jgdb/./sgf/test/0000/00000836.sgf"))
     }
-    fn assert_superko(path: PathBuf) {
+    fn _assert_superko(path: PathBuf) {
         let file = File::open(path.clone()).expect(&format!("Couldn't open path {:?}", path));
 
         let mut buf = String::new();
