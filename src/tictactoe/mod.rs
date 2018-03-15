@@ -341,9 +341,9 @@ mod expert {
             let game_expert = TTTGe::new(TicTacToeState::new_game());
             let mut game = TicTacToeState::new_game();
             let mut options = search::SearchTreeOptions::defaults();
-            options.readouts = 500;
+            options.readouts = 1000;
             options.tempering_point = 1;
-            options.cpuct = 0.50;
+            options.cpuct = 1.0;
             let mut search = search::SearchTree::init_with_options(game_expert, options);
             'inner: loop {
                 if let GameResult::InProgress = game.status {
@@ -353,8 +353,8 @@ mod expert {
                 } else {
                     if game.status != GameResult::TerminatedWithoutResult {
                         panic!(
-                            "The game didn't draw, but it should always draw: {:?}\n{}",
-                            game.status, game
+                            "Perfectly played games of TTT should always draw, but this one didn't:\n{}",
+                             game
                         );
                     }
                     break 'inner;
@@ -375,7 +375,7 @@ mod expert {
         let options = search::SearchTreeOptions {
             readouts: 1500,
             tempering_point: 0,
-            cpuct: 0.1,
+            cpuct: 0.5,
         };
 
         let mut search = search::SearchTree::init_with_options(game_expert, options);
