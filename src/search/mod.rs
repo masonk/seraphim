@@ -80,7 +80,6 @@ where
     State: ::std::fmt::Debug,
 {
     expanded: bool,
-    parent_edge_idx: Option<EdgeIdx>,
     state: State,
 }
 impl<State> Node<State>
@@ -90,7 +89,6 @@ where
     fn new_unexpanded(state: State) -> Self {
         Node {
             expanded: false,
-            parent_edge_idx: None,
             state: state,
         }
     }
@@ -175,14 +173,10 @@ where
 
         let visits: Vec<(u32, EdgeIdx, NodeIdx)> = self.search_tree
             .neighbors(self.root_idx)
-            .map(|child_idx| {
-                let node = self.search_tree.node_weight(child_idx).unwrap();
-                let edge_idx = node.parent_edge_idx.unwrap();
-                (edge_idx, child_idx)
-            })
-            .map(|(edge_idx, node_idx)| {
-                let edge = self.search_tree.edge_weight(edge_idx).unwrap();
-                (edge.visit_count, edge_idx, node_idx)
+            .map(|n| (self.parent_edge_idx(n).unwrap(), n))
+            .map(|(e, n)| {
+                let edge = self.search_tree.edge_weight(e).unwrap();
+                (edge.visit_count, e, n)
             })
             .collect();
 
@@ -205,15 +199,8 @@ where
             // After 30 plys, find the move with the highest visit count
             let (selected_edge, selected_node) = self.search_tree
                 .neighbors(self.root_idx)
-                .map(|child_idx| {
-                    let node = self.search_tree.node_weight(child_idx).unwrap();
-                    let edge_idx = node.parent_edge_idx.unwrap();
-                    (edge_idx, child_idx)
-                })
-                .max_by_key(|&(edge_idx, _)| {
-                    let edge = self.search_tree.edge_weight(edge_idx).unwrap();
-                    edge.visit_count
-                })
+                .map(|child_idx| (self.parent_edge_idx(child_idx).unwrap(), child_idx))
+                .max_by_key(|&(edge_idx, _)| self.search_tree[edge_idx].visit_count)
                 .unwrap();
             //todo: Discard unreachable edges
             trace!("{:?} {:?}", selected_edge, selected_node);
@@ -230,10 +217,7 @@ where
         let next_node_idx = self.search_tree
             .neighbors(self.root_idx)
             .find(|node_idx| {
-                let node = self.search_tree.node_weight(*node_idx).unwrap();
-                let edge_idx = node.parent_edge_idx.unwrap();
-                let edge = self.search_tree.edge_weight(edge_idx).unwrap();
-                edge.action == action
+                self.search_tree[self.parent_edge_idx(*node_idx).unwrap()].action == action
             })
             .unwrap();
         self.ply += 1;
@@ -286,22 +270,24 @@ where
         */
         let n_b: u32 = self.search_tree
             .neighbors(self.root_idx)
-            .map(|child_idx| {
-                let node = self.search_tree.node_weight(child_idx).unwrap();
-                let edge_idx = node.parent_edge_idx.unwrap();
-                edge_idx
-            })
+            .map(|child_idx| self.parent_edge_idx(child_idx).unwrap())
             .map(|edge_idx| {
-                let edge = self.search_tree.edge_weight(edge_idx).unwrap();
-                edge.visit_count
+                if let Some(edge) = self.search_tree.edge_weight(edge_idx) {
+                    return edge.visit_count;
+                }
+                debug!(
+                    "PROBLEM: NO PARENT FOR CHILD OF:\n{}",
+                    self.search_tree[idx].state
+                );
+                panic!();
             })
             .sum();
         let (next_edge_idx, _) = self.search_tree
             .neighbors(idx)
             .map(|node_idx| {
-                let node = self.search_tree.node_weight(node_idx).unwrap();
-                let edge_idx = node.parent_edge_idx.unwrap();
-                let edge = self.search_tree.edge_weight(edge_idx).unwrap();
+                let edge_idx = self.parent_edge_idx(node_idx).unwrap();
+
+                let edge = &self.search_tree[edge_idx];
                 let puct = self.options.cpuct * edge.prior * f32::sqrt(n_b as f32)
                     / ((1 + edge.visit_count) as f32)
                     + edge.average_value;
@@ -317,19 +303,29 @@ where
         let (_, next_node_idx) = self.search_tree.edge_endpoints(next_edge_idx).unwrap();
         next_node_idx
     }
+    fn parent_node_idx(&self, idx: NodeIdx) -> Option<NodeIdx> {
+        self.search_tree
+            .neighbors_directed(idx, petgraph::Direction::Incoming)
+            .nth(0)
+    }
+    fn parent_edge_idx(&self, idx: NodeIdx) -> Option<EdgeIdx> {
+        self.parent_node_idx(idx)
+            .and_then(|parent_idx| self.search_tree.find_edge(parent_idx, idx))
+    }
     fn backup(&mut self, reward: f32, node_idx: NodeIdx, node: &mut Node<State>) {
         let self_ptr = self as *mut Self;
         if node_idx == self.root_idx {
             return;
         }
-        let parent_edge_idx = node.parent_edge_idx.unwrap();
+        let parent_edge_idx = self.parent_edge_idx(node_idx).unwrap();
         let parent_edge = self.search_tree.edge_weight_mut(parent_edge_idx).unwrap();
 
         parent_edge.visit_count += 1;
         parent_edge.total_value += reward;
         parent_edge.average_value = parent_edge.total_value / (parent_edge.visit_count as f32);
 
-        let (parent_idx, _) = self.search_tree.edge_endpoints(parent_edge_idx).unwrap();
+        let parent_idx = self.parent_node_idx(node_idx)
+            .expect("Somehow reached a non-root node that has no parent...");
 
         let mut parent_node = self.search_tree.node_weight_mut(parent_idx).unwrap();
         unsafe {
@@ -355,7 +351,7 @@ where
             let new_state = self.game_expert.apply(state, &action);
             let leaf_idx = self.search_tree.add_node(Node::new_unexpanded(new_state));
 
-            let edge_idx = self.search_tree.add_edge(
+            self.search_tree.add_edge(
                 node_idx,
                 leaf_idx,
                 Edge {
@@ -366,7 +362,6 @@ where
                     average_value: 0.0,
                 },
             );
-            self.search_tree[leaf_idx].parent_edge_idx = Some(edge_idx);
         }
         unexpanded_node.expanded = true;
     }

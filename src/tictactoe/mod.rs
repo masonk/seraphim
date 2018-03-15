@@ -294,23 +294,31 @@ mod expert {
     use super::*;
 
     #[test]
-    fn init_game_expert() {
+    fn games_always_draw() {
         _setup_test();
-        let game_expert = TTTGe {};
-        let mut game = TicTacToeState::new_game();
-        let mut options = search::SearchTreeOptions::defaults();
-        options.readouts = 1500;
-        options.tempering_point = 0;
-        let mut search = search::SearchTree::init_with_options(game_expert, options);
 
-        loop {
-            if let GameResult::InProgress = game.status {
-                let next = search.read_and_apply();
-                game.play(next).unwrap();
-                println!("{}", game);
-            } else {
-                trace!("{:?}", game.status);
-                break;
+        for _ in 0..100 {
+            let game_expert = TTTGe {};
+            let mut game = TicTacToeState::new_game();
+            let mut options = search::SearchTreeOptions::defaults();
+            options.readouts = 1500;
+            options.tempering_point = 2;
+            options.cpuct = 0.1;
+            let mut search = search::SearchTree::init_with_options(game_expert, options);
+            'inner: loop {
+                if let GameResult::InProgress = game.status {
+                    let next = search.read_and_apply();
+                    game.play(next).unwrap();
+                    println!("{}", game);
+                } else {
+                    // if game.status != GameResult::TerminatedWithoutResult {
+                    //     panic!(
+                    //         "The game didn't draw, but it should always draw: {:?}\n{}",
+                    //         game.status, game
+                    //     );
+                    // }
+                    break 'inner;
+                }
             }
         }
     }

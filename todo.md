@@ -1,4 +1,5 @@
-- CLear up the heisenbug where sometimes state is full of o's
+- Clear up the heisenbug where sometimes State is full of o's
+
 - Why isn't MCTS trying to player better moves.
 - Add a bunch of trace statements for MCTS
 - debug MCTS
