@@ -98,7 +98,7 @@ where
 pub struct SearchTreeOptions {
     pub cpuct: f32, // a constant determining the tradeoff between exploration and exploitation; .25 in the AGZ paper. Higher numbers bias the search towards less-explored nodes, lower numbers bias the search towards more promising nodes.
     pub readouts: u32, // how many games to play when search for a single move; 1600 in the AGZ paper
-    pub tempering_point: u32, // how many plays should progress until we lower the temperature of move selection from 1 to ~0. 30 in the AGZ paper
+    pub tempering_point: u32, // how many plys should progress until we lower the temperature of move selection from 1 to ~0. 30 in the AGZ paper
 }
 impl SearchTreeOptions {
     pub fn defaults() -> Self {
@@ -191,6 +191,7 @@ where
                 if cum_prob > rand {
                     self.ply += 1;
                     self.root_idx = node_idx;
+                    // TODO: Remove all nodes that are made unreachable due to advancing down the tree.
                     let edge = self.search_tree.remove_edge(edge_idx).unwrap();
                     return edge.action;
                 }
@@ -242,9 +243,9 @@ where
                 }
                 _ => {
                     match result {
-                        GameResult::LastPlayerLost => self.backup(-1.0, node_idx, node),
-                        GameResult::LastPlayerWon => self.backup(1.0, node_idx, node),
-                        GameResult::TerminatedWithoutResult => self.backup(0.0, node_idx, node),
+                        GameResult::LastPlayerLost => self.backup(-1.0, node_idx),
+                        GameResult::LastPlayerWon => self.backup(1.0, node_idx),
+                        GameResult::TerminatedWithoutResult => self.backup(0.0, node_idx),
                         _ => {
                             warn!("Tried to backup some unknown terminal state. Algorithm error. ")
                         }
@@ -269,7 +270,7 @@ where
 
         */
         let n_b: u32 = self.search_tree
-            .neighbors(self.root_idx)
+            .neighbors(idx)
             .map(|child_idx| self.parent_edge_idx(child_idx).unwrap())
             .map(|edge_idx| {
                 if let Some(edge) = self.search_tree.edge_weight(edge_idx) {
@@ -312,8 +313,7 @@ where
         self.parent_node_idx(idx)
             .and_then(|parent_idx| self.search_tree.find_edge(parent_idx, idx))
     }
-    fn backup(&mut self, reward: f32, node_idx: NodeIdx, node: &mut Node<State>) {
-        let self_ptr = self as *mut Self;
+    fn backup(&mut self, reward: f32, node_idx: NodeIdx) {
         if node_idx == self.root_idx {
             return;
         }
@@ -324,13 +324,9 @@ where
         parent_edge.total_value += reward;
         parent_edge.average_value = parent_edge.total_value / (parent_edge.visit_count as f32);
 
-        let parent_idx = self.parent_node_idx(node_idx)
-            .expect("Somehow reached a non-root node that has no parent...");
+        let parent_idx = self.parent_node_idx(node_idx).unwrap();
 
-        let mut parent_node = self.search_tree.node_weight_mut(parent_idx).unwrap();
-        unsafe {
-            (*self_ptr).backup(reward * -1.0, parent_idx, &mut parent_node);
-        }
+        self.backup(reward * -1.0, parent_idx);
     }
     // Create an edge and a node for each possible move from this position
     fn expand(&mut self, node_idx: NodeIdx, unexpanded_node: &mut Node<State>) {
@@ -345,9 +341,7 @@ where
         }
 
         let (actions, priors) = self.game_expert.legal_actions(&state);
-        // println!("state:\n{}", state);
         for (action, prior) in actions.into_iter().zip(priors.into_iter()) {
-            // println!("{:?}", action);
             let new_state = self.game_expert.apply(state, &action);
             let leaf_idx = self.search_tree.add_node(Node::new_unexpanded(new_state));
 

@@ -1,7 +1,6 @@
+- Why doesn't MCTS find the right move in this test: 
+cargo test expert::search_blocks_immediate_loss -- --nocapture
+
 - Clear up the heisenbug where sometimes State is full of o's
 
-- Why isn't MCTS trying to player better moves.
-- Add a bunch of trace statements for MCTS
-- debug MCTS
-- unit test MCTS
 - Get the debugger working 

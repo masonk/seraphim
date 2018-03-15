@@ -83,7 +83,11 @@ impl TicTacToeState {
         let mut plys = 0;
         let mut count = 0;
         let mut winner = GameResult::InProgress;
-        for (i, c) in s.chars().filter(|c| !c.is_whitespace()).enumerate().take(9) {
+        for (i, c) in s.chars()
+            .filter(|c| !c.is_whitespace() && *c != '|')
+            .enumerate()
+            .take(9)
+        {
             match c {
                 'x' => {
                     val.place_and_check_winner(i, Mark::Cross)
@@ -229,10 +233,17 @@ impl fmt::Display for TicTacToeState {
 }
 
 #[derive(Clone, Debug, PartialEq, Copy)]
-pub struct TTTGe {}
+pub struct TTTGe {
+    root_state: TicTacToeState,
+}
+impl TTTGe {
+    fn new(root_state: TicTacToeState) -> Self {
+        TTTGe { root_state }
+    }
+}
 impl GameExpert<TicTacToeState, usize> for TTTGe {
     fn root(&self) -> TicTacToeState {
-        TicTacToeState::new_game()
+        self.root_state
     }
 
     fn legal_actions(&self, state: &TicTacToeState) -> (Vec<usize>, Vec<f32>) {
@@ -293,17 +304,46 @@ fn _init_env_logger() {
 mod expert {
     use super::*;
 
+    // #[test]
+    // fn games_always_draw_500_readouts_explore() {
+    //     _setup_test();
+
+    //     for _ in 0..100 {
+    //         let game_expert = TTTGe {};
+    //         let mut game = TicTacToeState::new_game();
+    //         let mut options = search::SearchTreeOptions::defaults();
+    //         options.readouts = 500;
+    //         options.tempering_point = 1;
+    //         options.cpuct = 0.1;
+    //         let mut search = search::SearchTree::init_with_options(game_expert, options);
+    //         'inner: loop {
+    //             if let GameResult::InProgress = game.status {
+    //                 let next = search.read_and_apply();
+    //                 game.play(next).unwrap();
+    //                 println!("{}", game);
+    //             } else {
+    //                 if game.status != GameResult::TerminatedWithoutResult {
+    //                     panic!(
+    //                         "The game didn't draw, but it should always draw: {:?}\n{}",
+    //                         game.status, game
+    //                     );
+    //                 }
+    //                 break 'inner;
+    //             }
+    //         }
+    //     }
+    // }
     #[test]
-    fn games_always_draw() {
+    fn games_always_draw_500_readouts() {
         _setup_test();
 
         for _ in 0..100 {
-            let game_expert = TTTGe {};
+            let game_expert = TTTGe::new(TicTacToeState::new_game());
             let mut game = TicTacToeState::new_game();
             let mut options = search::SearchTreeOptions::defaults();
-            options.readouts = 1500;
-            options.tempering_point = 2;
-            options.cpuct = 0.1;
+            options.readouts = 500;
+            options.tempering_point = 1;
+            options.cpuct = 0.50;
             let mut search = search::SearchTree::init_with_options(game_expert, options);
             'inner: loop {
                 if let GameResult::InProgress = game.status {
@@ -311,18 +351,60 @@ mod expert {
                     game.play(next).unwrap();
                     println!("{}", game);
                 } else {
-                    // if game.status != GameResult::TerminatedWithoutResult {
-                    //     panic!(
-                    //         "The game didn't draw, but it should always draw: {:?}\n{}",
-                    //         game.status, game
-                    //     );
-                    // }
+                    if game.status != GameResult::TerminatedWithoutResult {
+                        panic!(
+                            "The game didn't draw, but it should always draw: {:?}\n{}",
+                            game.status, game
+                        );
+                    }
                     break 'inner;
                 }
             }
         }
     }
 
+    #[test]
+    fn search_blocks_immediate_loss() {
+        let game = TicTacToeState::from_str(indoc!(
+            "\
+            |_|_|o|
+            |o|x|_|
+            |x|_|o|"
+        )).expect("Couldn't parse an empty board");
+        let game_expert = TTTGe::new(game.clone());
+        let options = search::SearchTreeOptions {
+            readouts: 1500,
+            tempering_point: 0,
+            cpuct: 0.1,
+        };
+
+        let mut search = search::SearchTree::init_with_options(game_expert, options);
+        let next = search.read_and_apply();
+        assert_eq!(next, 5);
+    }
+
+    #[test]
+    fn play_10() {
+        _setup_test();
+
+        for _ in 0..10 {
+            let game_expert = TTTGe::new(TicTacToeState::new_game());
+            let mut game = TicTacToeState::new_game();
+            let mut options = search::SearchTreeOptions::defaults();
+            options.readouts = 1500;
+            options.tempering_point = 1;
+            options.cpuct = 0.1;
+            let mut search = search::SearchTree::init_with_options(game_expert, options);
+            loop {
+                if let GameResult::InProgress = game.status {
+                    let next = search.read_and_apply();
+                    game.play(next).unwrap();
+                } else {
+                    break;
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
