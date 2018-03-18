@@ -118,7 +118,7 @@ where
 {
     rand: rand::ThreadRng,
     game_expert: G,
-    search_tree: petgraph::Graph<Node<State>, Edge<Action>>,
+    search_tree: petgraph::stable_graph::StableGraph<Node<State>, Edge<Action>>,
     ply: u32,          // how many plys have been played at the root_idx
     root_idx: NodeIdx, // cur
     options: SearchTreeOptions,
@@ -132,7 +132,7 @@ where
 {
     // Start a new game that will be played by iterative searching
     pub fn init_with_options(game_expert: G, options: SearchTreeOptions) -> Self {
-        let mut search_tree = petgraph::Graph::new();
+        let mut search_tree = petgraph::stable_graph::StableGraph::new();
         let root_state = game_expert.root();
         let root_node = Node::new_unexpanded(root_state);
         let root_idx = search_tree.add_node(root_node);
@@ -235,7 +235,7 @@ where
             match result {
                 GameResult::InProgress => {
                     if !node.expanded {
-                        self.expand(node_idx, node);
+                        self.expand(node_idx);
                     }
                     let next_idx = self.select_next_node(node_idx);
 
@@ -329,34 +329,53 @@ where
         self.backup(reward * -1.0, parent_idx);
     }
     // Create an edge and a node for each possible move from this position
-    fn expand(&mut self, node_idx: NodeIdx, unexpanded_node: &mut Node<State>) {
-        let state = &unexpanded_node.state;
-        let result = self.game_expert.result(state);
+    fn expand(&mut self, node_idx: NodeIdx) {
+        {
+            let node = &self.search_tree[node_idx];
+            let state = &node.state;
+            let result = self.game_expert.result(state);
 
-        match &result {
-            &GameResult::InProgress => {}
-            _ => {
-                return;
+            match &result {
+                &GameResult::InProgress => {}
+                _ => {
+                    return;
+                }
             }
         }
+        {
+            let self_ptr = self as *mut Self;
+            let (actions, priors) = self.game_expert
+                .legal_actions(&self.search_tree[node_idx].state);
 
-        let (actions, priors) = self.game_expert.legal_actions(&state);
-        for (action, prior) in actions.into_iter().zip(priors.into_iter()) {
-            let new_state = self.game_expert.apply(state, &action);
-            let leaf_idx = self.search_tree.add_node(Node::new_unexpanded(new_state));
+            let states: Vec<(Action, State)> = actions
+                .into_iter()
+                .map(|action| {
+                    let new_state = self.game_expert
+                        .apply(&self.search_tree[node_idx].state, &action);
+                    (action, new_state)
+                })
+                .collect();
 
-            self.search_tree.add_edge(
-                node_idx,
-                leaf_idx,
-                Edge {
-                    action,
-                    prior,
-                    visit_count: 0,
-                    total_value: 0.0,
-                    average_value: 0.0,
-                },
-            );
+            for ((action, new_state), prior) in states.into_iter().zip(priors.into_iter()) {
+                unsafe {
+                    let leaf_idx = (*self_ptr)
+                        .search_tree
+                        .add_node(Node::new_unexpanded(new_state));
+
+                    (*self_ptr).search_tree.add_edge(
+                        node_idx,
+                        leaf_idx,
+                        Edge {
+                            action,
+                            prior,
+                            visit_count: 0,
+                            total_value: 0.0,
+                            average_value: 0.0,
+                        },
+                    );
+                }
+            }
         }
-        unexpanded_node.expanded = true;
+        self.search_tree.node_weight_mut(node_idx).unwrap().expanded = true;
     }
 }

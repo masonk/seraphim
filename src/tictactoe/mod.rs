@@ -22,15 +22,7 @@ impl fmt::Display for Mark {
         }
     }
 }
-// impl Mark {
-//     fn player(&self) -> Player {
-//         match self {
-//             &Mark::Circle => Player::Circle,
-//             &Mark::Cross => Player::Cross,
-//             _ => panic!("No player for Empty"),
-//         }
-//     }
-// }
+
 #[derive(Debug, Copy, Clone, PartialEq, Hash)]
 enum Player {
     Circle,
@@ -268,14 +260,7 @@ impl GameExpert<TicTacToeState, usize> for TTTGe {
     }
     fn apply(&mut self, state: &TicTacToeState, action: &usize) -> TicTacToeState {
         let mut clone = state.clone();
-        if *state != clone {}
-        match clone.play(*action) {
-            Ok(__) => {}
-            Err(err) => {
-                println!("{}->\n{}\naction: {}", state, clone, action);
-                panic!("{:?}", err);
-            }
-        }
+        clone.play(*action).unwrap();
         clone
     }
     fn to_win(&self, _: &TicTacToeState) -> f32 {
@@ -304,62 +289,70 @@ fn _init_env_logger() {
 mod expert {
     use super::*;
 
-    // #[test]
-    // fn games_always_draw_500_readouts_explore() {
-    //     _setup_test();
-
-    //     for _ in 0..100 {
-    //         let game_expert = TTTGe {};
-    //         let mut game = TicTacToeState::new_game();
-    //         let mut options = search::SearchTreeOptions::defaults();
-    //         options.readouts = 500;
-    //         options.tempering_point = 1;
-    //         options.cpuct = 0.1;
-    //         let mut search = search::SearchTree::init_with_options(game_expert, options);
-    //         'inner: loop {
-    //             if let GameResult::InProgress = game.status {
-    //                 let next = search.read_and_apply();
-    //                 game.play(next).unwrap();
-    //                 println!("{}", game);
-    //             } else {
-    //                 if game.status != GameResult::TerminatedWithoutResult {
-    //                     panic!(
-    //                         "The game didn't draw, but it should always draw: {:?}\n{}",
-    //                         game.status, game
-    //                     );
-    //                 }
-    //                 break 'inner;
-    //             }
-    //         }
-    //     }
-    // }
     #[test]
-    fn games_always_draw_500_readouts() {
+    fn stress_test() {
         _setup_test();
-
-        for _ in 0..100 {
+        let mut draw = 0;
+        let n = 500;
+        for _ in 0..n {
             let game_expert = TTTGe::new(TicTacToeState::new_game());
             let mut game = TicTacToeState::new_game();
             let mut options = search::SearchTreeOptions::defaults();
             options.readouts = 1000;
             options.tempering_point = 1;
-            options.cpuct = 1.0;
+            options.cpuct = 2.0;
             let mut search = search::SearchTree::init_with_options(game_expert, options);
-            'inner: loop {
+            loop {
                 if let GameResult::InProgress = game.status {
                     let next = search.read_and_apply();
                     game.play(next).unwrap();
-                    println!("{}", game);
                 } else {
-                    if game.status != GameResult::TerminatedWithoutResult {
-                        panic!(
-                            "Perfectly played games of TTT should always draw, but this one didn't:\n{}",
-                             game
-                        );
+                    if game.status == GameResult::TerminatedWithoutResult {
+                        draw += 1;
                     }
-                    break 'inner;
+                    break;
                 }
             }
+        }
+        println!("drew {} / {} games", draw, n);
+        assert!(
+            (draw as f32) / (n as f32) > 0.95,
+            "Most games should draw in a well-played game of Tic Tac Toe"
+        );
+    }
+
+    #[test]
+    fn increasing_readouts_improves_play() {
+        _setup_test();
+        let mut draws: Vec<usize> = Vec::new();
+        let n = 100;
+        let readouts = [50, 100, 200, 400, 800];
+        for readouts in readouts.iter() {
+            let mut draw = 0;
+            for _ in 0..n {
+                let game_expert = TTTGe::new(TicTacToeState::new_game());
+                let mut game = TicTacToeState::new_game();
+                let mut options = search::SearchTreeOptions::defaults();
+                options.readouts = *readouts;
+                options.tempering_point = 1; // start from a random position, then always play the best move
+                options.cpuct = 2.0;
+                let mut search = search::SearchTree::init_with_options(game_expert, options);
+                loop {
+                    if let GameResult::InProgress = game.status {
+                        let next = search.read_and_apply();
+                        game.play(next).unwrap();
+                    } else {
+                        if game.status == GameResult::TerminatedWithoutResult {
+                            draw += 1;
+                        }
+                        break;
+                    }
+                }
+            }
+            draws.push(draw);
+        }
+        for i in 1..draws.len() {
+            assert!(draws[i] >= draws [i-1], "Increasing readouts should increase the number of draws, but it didn't: {:?} draws for readout depths of {:?}", draws, readouts)
         }
     }
 
@@ -370,7 +363,7 @@ mod expert {
             |_|_|o|
             |o|x|_|
             |x|_|o|"
-        )).expect("Couldn't parse an empty board");
+        )).expect("Couldn't parse board.");
         let game_expert = TTTGe::new(game.clone());
         let options = search::SearchTreeOptions {
             readouts: 1500,

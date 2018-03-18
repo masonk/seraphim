@@ -1,6 +1,13 @@
-- Why doesn't MCTS find the right move in this test: 
-cargo test expert::search_blocks_immediate_loss -- --nocapture
+- Why does 200 readouts of TTT consistently underperform 100 readouts?
+time cargo test expert::increasing_readouts -- --nocapture
 
-- Clear up the heisenbug where sometimes State is full of o's
+- Make sure the selected action is best from the PoV of the *current player*
+
 - Add ability to advance the search tree from outside (e.g., if a different player plays a move, need to start analyzing from the new state)
+
 - Get the debugger working 
+
+- (perf) Switch to a StableGraph for perf?
+- Multithread search
+
+- Implement a game expert with a trainable net
