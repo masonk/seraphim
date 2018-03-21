@@ -238,7 +238,7 @@ impl GameExpert<TicTacToeState, usize> for TTTGe {
         self.root_state
     }
 
-    fn legal_actions(&self, state: &TicTacToeState) -> (Vec<usize>, Vec<f32>) {
+    fn hypotheses(&self, state: &TicTacToeState) -> search::Hypotheses<usize> {
         let actions = state
             .board
             .iter()
@@ -254,18 +254,20 @@ impl GameExpert<TicTacToeState, usize> for TTTGe {
         // For the game of tic tac toe, no real expertise is needed.
         // Just consider all actions equally probable.
         // MCTS can fully exhaust the state space of TTT in readouts of 20-30 games per move.
-        let probs = actions.iter().map(|_| 1.0 / len).collect::<Vec<f32>>();
+        let move_probabilities = actions.iter().map(|_| 1.0 / len).collect::<Vec<f32>>();
 
-        (actions, probs)
+        search::Hypotheses {
+            actions,
+            move_probabilities,
+            to_win: 0.5,
+        }
     }
     fn apply(&mut self, state: &TicTacToeState, action: &usize) -> TicTacToeState {
         let mut clone = state.clone();
         clone.play(*action).unwrap();
         clone
     }
-    fn to_win(&self, _: &TicTacToeState) -> f32 {
-        0.5
-    }
+
     fn result(&self, state: &TicTacToeState) -> search::GameResult {
         state.status
     }
@@ -335,7 +337,7 @@ mod expert {
                 let mut options = search::SearchTreeOptions::defaults();
                 options.readouts = *readouts;
                 options.tempering_point = 1; // start from a random position, then always play the best move
-                options.cpuct = 2.0;
+                options.cpuct = 3.0;
                 let mut search = search::SearchTree::init_with_options(game_expert, options);
                 loop {
                     if let GameResult::InProgress = game.status {

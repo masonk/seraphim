@@ -1,5 +1,4 @@
-/* This module uses Monte Carlo Tree Search informed by an expert policy to generate an improved analysis of the game state by sampling future states. This process is called "reading" when human players do it. The computer, however, does it quantitatively, and it reads to the end of the game before scoring a move.
-*/
+/* This module implements informed Monte Carlo tree search. "Informed" means that the search is guided by an expert policy that ascribes Bayesian prior probabilities to question of whether each possible next action is the best one.*/
 use petgraph;
 use rand;
 use rand::Rng;
@@ -12,23 +11,16 @@ pub enum GameResult {
     LastPlayerLost,
 }
 
-// pub struct Beliefs {
-//     move_probabilities: Vec<f32>,
-//     to_win: f32,
-// }
+pub struct Hypotheses<Action> {
+    pub actions: Vec<Action>, // Each legal action available from the a certain State
+    pub move_probabilities: Vec<f32>, // The prior probability that each action is the best. These should be in the same order as the corresponding actions Vec
+    pub to_win: f32,                  // The probability that the next player will win the game
+}
 
-// pub struct Hypotheses<Action> {
-//     actions: Vec<Action>, // Each legal action from a given state.
-//     // There must be at least one legal action at every non-terminal state.
-//     // If GameExpert::result returns InProgress, GameExpert::legal_action must return at least one action.
-//     beliefs: Beliefs, // the expert's prior belief that each action is the best move from the current position. Used in the expansion phase of the MCTS.
-//                       // these will be zipped together. In other words, the ith action corresponds to the ith belief.
-// }
-
-// pub struct SearchResult<Action> {
-//     next_move: Action,
-//     beliefs: Hypotheses<Action>, // for training the expert
-// }
+pub struct SearchResult<Action> {
+    next_move: Action,              // the chosen Action
+    hypotheses: Hypotheses<Action>, // for training the expert
+}
 /* 
 The expert that guides the MCTS search is abstracted by the GameExpert trait, which users of this library are to implement.  The GameExpert knows the rules of the game it's playing, and also has bayesian prior beliefs about which moves are best to play and the probability that the next player will ultimately win the game.
 
@@ -43,19 +35,24 @@ where
 {
     fn root(&self) -> State;
 
-    // TODO: The AGZ paper minibatches the request for expert policies (the Vec<f32> here)
-    // into 8 batches. There should be a way of batching these requests
+    // TODO: The AGZ paper minibatches the request for expert policies
+    // into batches of 8 hypotheses. There should be a way of batching these requests
     // This has to come after multi-threading the search, since threads block
     // while waiting for their batch to accumulate.
-    fn legal_actions(&self, state: &State) -> (Vec<Action>, Vec<f32>);
+    fn hypotheses(&self, state: &State) -> Hypotheses<Action>;
 
-    fn apply(&mut self, state: &State, action: &Action) -> State; // When MCTS choses a legal action from a particular state for the first time, it will call this function to expand a leaf node with a new state.
+    fn apply(&mut self, &State, &Action) -> State; // When MCTS choses an action for the first time, it will call this function to obtain the new state. Used during the MCTS leaf expansion step.
 
-    // What does the game expert think the *NEXT PLAYER'S* probability of winning the game is, from this position? This function will only be called on States that are GameResult::InProgress.
-
-    fn to_win(&self, &State) -> f32;
-
+    // What is the search::GameResult of this game? Search continues until it reaches a terminal (non-InProgress) state, and then backpropagates based on the final result of the game.
+    // and then
     fn result(&self, &State) -> GameResult;
+
+    // TODO: is this function necessary, or should GameExperts just train themselves to be more likely to play the chosen move?
+    // // train() will be called once per move that was actually made in the game.
+    // // with the improved Hypotheses that are a result of the tree search.
+    // // It is up to the game expert to use this information to train its underlying
+    // // model.
+    // fn train(&mut self, &State, &Hypotheses<Action>);
 }
 
 type NodeIdx = petgraph::graph::NodeIndex<petgraph::graph::DefaultIx>;
@@ -164,8 +161,9 @@ where
 
             AGZ resigns if its root value and best child value are lower than a threshhold.
 
-        Apply that selection to the search tree by advancing down the tree, and return the picked action
-        so that the GameExpert will know what was picked.
+        Apply that selection to the search tree by advancing down the tree, and return the picked action so that the GameExpert will know what was picked.
+
+        The GameExpert should train itself to be more likely to pick the same value that the tree search picked.
         */
         for _ in 0..self.options.readouts {
             self.read_one(self.root_idx);
@@ -344,8 +342,12 @@ where
         }
         {
             let self_ptr = self as *mut Self;
-            let (actions, priors) = self.game_expert
-                .legal_actions(&self.search_tree[node_idx].state);
+            let Hypotheses {
+                actions,
+                move_probabilities,
+                ..
+            } = self.game_expert
+                .hypotheses(&self.search_tree[node_idx].state);
 
             let states: Vec<(Action, State)> = actions
                 .into_iter()
@@ -356,7 +358,9 @@ where
                 })
                 .collect();
 
-            for ((action, new_state), prior) in states.into_iter().zip(priors.into_iter()) {
+            for ((action, new_state), prior) in
+                states.into_iter().zip(move_probabilities.into_iter())
+            {
                 unsafe {
                     let leaf_idx = (*self_ptr)
                         .search_tree
