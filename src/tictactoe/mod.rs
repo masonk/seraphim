@@ -61,7 +61,6 @@ struct TicTacToeState {
     plys: usize,
 }
 impl TicTacToeState {
-    // whitespace is ignored, valid chars are 'x', 'o', "_"
     pub fn new_game() -> Self {
         Self {
             board: [Mark::Empty; 9],
@@ -71,6 +70,7 @@ impl TicTacToeState {
         }
     }
     pub fn from_str(s: &str) -> Result<Self, ParseError> {
+        // whitespace is ignored, valid chars are 'x', 'o', "_"
         let mut val = Self::new_game();
         let mut plys = 0;
         let mut count = 0;
@@ -251,9 +251,7 @@ impl GameExpert<TicTacToeState, usize> for TTTGe {
             .collect::<Vec<usize>>();
 
         let len = actions.len() as f32;
-        // For the game of tic tac toe, no real expertise is needed.
-        // Just consider all actions equally probable.
-        // MCTS can fully exhaust the state space of TTT in readouts of 20-30 games per move.
+
         let move_probabilities = actions.iter().map(|_| 1.0 / len).collect::<Vec<f32>>();
 
         search::Hypotheses {

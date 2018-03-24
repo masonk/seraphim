@@ -94,7 +94,7 @@ where
 #[derive(Clone, Debug, PartialEq)]
 pub struct SearchTreeOptions {
     pub cpuct: f32, // a constant determining the tradeoff between exploration and exploitation; .25 in the AGZ paper. Higher numbers bias the search towards less-explored nodes, lower numbers bias the search towards more promising nodes.
-    pub readouts: u32, // how many games to play when search for a single move; 1600 in the AGZ paper
+    pub readouts: u32, // how many games to play when searching for a single move; 1600 in the AGZ paper
     pub tempering_point: u32, // how many plys should progress until we lower the temperature of move selection from 1 to ~0. 30 in the AGZ paper
 }
 impl SearchTreeOptions {

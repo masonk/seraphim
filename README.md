@@ -1,14 +1,33 @@
 # Seraphim, an Alpha Zero-style game AI
 
+[TOC]
 Seraphim is a monte carlo tree search algorithm that uses the AGZ variant of the PUCT algorithm ("primary upper confidence tree") to chose its next action.
 
 This variant of the algorithm relies on an _expert policy_ that, given a state, has a belief about which legal action is most likley to be the best one.
 
 The tree search is more likely to sample actions that the expert policy believes are probably the best ones. If the expert policy is good, then the MCTS will avoid lousy actions and spend most of its time examining good lines of play.
 
+
 ## TLDR
 
 Your job as a consumer of Seraphim is to implement `seraphim::search::GameExpert<S, A>` for the game you want Seraphim to learn. The GameExpert knows the rules of the game and has prior beliefs about which move is best from every position. seraphim::search runs a MCTS on each game state by querying the `GameExpert` to supply legal next actions and its prior beliefs about each action. 
+
+## Installation
+
+### Non-Cargo dependencies
+- [Nightly Rust](https://github.com/rust-lang-nursery/rustup.rs/#other-installation-methods)
+- C linker, such as `gcc`
+- [TensorFlow](https://www.tensorflow.org/install/)
+
+### Cargo
+This is a Cargo project, built on nightly rust. `cargo` is Rust's module and build system, equivalent to node's `npm`.
+
+This project requires nightly rust, because it uses feature gates. Use rustup to switch to a nightly toolchain if you haven't already, then run
+
+`cargo build`
+`cargo test`
+
+to verify the installation. A few tests might fail, such as `tictactoe::expert::increasing_readouts_improves_play`. But everything should build.
 
 ## The PUCT algorithm
 
@@ -44,4 +63,4 @@ In Seraphim, the GameExpert is a generic trait which is to be implemented for ea
 
 ## Getting started
 
-src/tictactoe/mod.rs contains an implementation of a GameExpert and its unit tests show examples of self-play of TicTacToe using a very simple expert policy (giving every legal move the same weight). Since TTT is a game with a small state space, the MCTS algorith alone is usually, but not always, able to find the best move from any position.
+[Tic Tac Toe](src/tictactoe/mod.rs) contains an implementation of a GameExpert and its unit tests show examples of self-play of TicTacToe using a very simple expert policy (giving every legal move the same weight). Since TTT is a game with a small state space, the MCTS algorith alone is usually, but not always, able to find the best move from any position.
