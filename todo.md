@@ -1,4 +1,6 @@
 - Implement a game expert with a trainable net
+    - Get TensorFlow building
+    - Implement a trainable net
 
 - Why does 200 readouts of TTT consistently underperform 100 readouts?
 time cargo test expert::increasing_readouts -- --nocapture
