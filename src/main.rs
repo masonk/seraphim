@@ -1,7 +1,7 @@
 extern crate flexi_logger;
-extern crate seraph;
+extern crate seraphim;
 
-// use seraph::core;
+// use seraphim::core;
 use std::path::PathBuf;
 // use std::fs::File;
 // use std::io::prelude::*;
@@ -16,6 +16,6 @@ fn init_env_logger() {
 }
 fn main() {
     init_env_logger();
-    seraph::go::sgf_replays::do_one(PathBuf::from("data/jgdb/./sgf/test/0004/00004648.sgf"))
+    seraphim::go::sgf_replays::do_one(PathBuf::from("data/jgdb/./sgf/test/0004/00004648.sgf"))
         .unwrap();
 }

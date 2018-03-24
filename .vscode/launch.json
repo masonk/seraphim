@@ -8,9 +8,9 @@
             "name": "Test game836 (gdb) Bash on Windows Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "/mnt/c/Users/mason_000/wsl/dev/rust/seraph/target/debug/seraph",
+            "program": "/mnt/c/Users/mason_000/wsl/dev/rust/seraphim/target/debug/seraphim",
             "stopAtEntry": false,
-            "cwd": "/mnt/c/Users/mason_000/wsl/dev/rust/seraph",
+            "cwd": "/mnt/c/Users/mason_000/wsl/dev/rust/seraphim",
             "environment": [],
             "externalConsole": true,
             "pipeTransport": {
