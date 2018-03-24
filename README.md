@@ -8,13 +8,13 @@ The tree search is more likely to sample actions that the expert policy believes
 
 ## TLDR
 
-Your job as a consumer of Seraphim is to implement seraphim::search::GameExpert<S, A> for the game you want Seraphim to learn. The GameExpert knows the rules of the game and has prior beliefs about which move is best from every position. seraphim::search runs a MCTS on each game state by using the MCTS to supply legal next actions and its prior beliefs about each action. 
+Your job as a consumer of Seraphim is to implement `seraphim::search::GameExpert<S, A>` for the game you want Seraphim to learn. The GameExpert knows the rules of the game and has prior beliefs about which move is best from every position. seraphim::search runs a MCTS on each game state by using the MCTS to supply legal next actions and its prior beliefs about each action. 
 
 ## The PUCT algorithm
 
-For a given game state s, the PUCT algorithm takes a fixed number of samples  of the available actions (1600 in the paper, configurable in Seraphim). For each action it samples, a new state is generated, and applies the same logic again from this new state, recursively, until it reaches a terminal state.
+For a given game state s, the PUCT algorithm takes a fixed number of samples  of the available actions (1600 in the paper; configurable in Seraphim by changing `search::SearchTreeOptions::readouts`). For each action it samples, a new state is generated, and applies the same logic again from this new state, recursively, until it reaches a terminal state.
 
-When PUCT reaches a terminal state, it scores the game, and updates action values for every (state, action) pair that was visited on the way to the terminal state. In this way, the algorithm effectively plays 1600 games to the end each time it is asked to chose a action, always tending to favor better actions. It then choses to play the action it sampled most often in its search, subject to some noise in order to produce variations in its play. 
+When PUCT reaches a terminal state, it scores the game, and updates action values for every (state, action) pair that was visited on the way to the terminal state. In this way, the algorithm effectively plays 1600 games to the end each time it is asked to chose a action, always tending to favor better actions. It then choses to play the action it sampled most often in its search, subject to some noise in early actions, designed to produce variations in its play. You can customize the ply on which AGZ cools down its search by changing `search::SearchTreeOptions::tempering_point`. 
 
 ### Chosing the next action to sample
 
@@ -22,13 +22,13 @@ For each sample, PUCT choses from among all possible actions by always chosing t
 
 Q(s,a) + U(s,a)
 
-where Q(s,a) is the exploitation term, where the average value of action "a" from the current state, and
+where Q(s,a) is the average value of action "a" from the current state, and
 
 U(s,a) = cP(s,a)sqrt(N(s, b))/(1 + N(s,a))
 
-is an exploration term that gives weight to lesser explored nodes and to nodes that the expert prefers.
+is an exploration term that gives value to lesser explored nodes and to nodes that the expert prefers.
 
-"c" is a hyperparameter that controls the tradeoff between exploitation (Q) and exploration (U). AGZ used c = 0.25 in the paper.
+"c" is a hyperparameter that controls the tradeoff between exploitation (Q) and exploration (U). AGZ used c = 0.25 in the paper. You can configure any value for c in `search::SearchTreeOptions::cpuct`.
 
 P(s,a) is the expert's prior belief that action a from state s is the best choice. It is a probability on [0,1]. This is the part of algorithm that must be supplied by the game expert.
 
