@@ -8,7 +8,7 @@ The tree search is more likely to sample actions that the expert policy believes
 
 ## TLDR
 
-Your job as a consumer of Seraphim is to implement `seraphim::search::GameExpert<S, A>` for the game you want Seraphim to learn. The GameExpert knows the rules of the game and has prior beliefs about which move is best from every position. seraphim::search runs a MCTS on each game state by using the MCTS to supply legal next actions and its prior beliefs about each action. 
+Your job as a consumer of Seraphim is to implement `seraphim::search::GameExpert<S, A>` for the game you want Seraphim to learn. The GameExpert knows the rules of the game and has prior beliefs about which move is best from every position. seraphim::search runs a MCTS on each game state by querying the `GameExpert` to supply legal next actions and its prior beliefs about each action. 
 
 ## The PUCT algorithm
 
