@@ -15,9 +15,41 @@ Your job as a consumer of Seraphim is to implement `seraphim::search::GameExpert
 ## Installation
 
 ### Non-Cargo dependencies
+#### IMPORTANT NOTE
+
+> You'll have to build Tensorflow from source, with GPU acceleration enabled, in order to
+> run the nets or build your own nets.
+> This is an involved process and the only officially supported platforms for this are Ubuntu 16.04 and MacOS.
+> I tried to build this on Windows and it was such a pain that I found it easier to download Ubuntu and dual boot into Ubuntu just to develop this net.
+
 - [Nightly Rust](https://github.com/rust-lang-nursery/rustup.rs/#other-installation-methods)
 - C linker, such as `gcc`
-- [TensorFlow](https://www.tensorflow.org/install/)
+- [Python 3](https://www.tensorflow.org/install/install_linux#installing_with_virtualenv) 
+   
+   This is to run the Python scripts that build the tensorflow graphs used by the game experts. You can set up the seraphim repo as a Python3 virtualenv root by following the linked instructions.
+
+    e.g.
+   
+   ```
+   sudo apt install python3-pip python3-dev python-virtualenv
+   cd seraphim
+   virtualenv --system-site-packages -p python3 .
+   source bin/activate
+   ```
+
+- [TensorFlow for python](https://www.tensorflow.org/install/install_linux#installing_with_virtualenv)
+ 
+   (enable your virtualenv first, if you're using one, then install the pip package)
+   
+   ```
+   pip3 install --upgrade tensorflow-gpu
+   ```
+
+- [GPU-accelerated libtensorflow.so](https://github.com/tensorflow/rust#manual-tensorflow-compilation)
+   
+   Bite the bullet and build tensorflow core from scratch with GPU acceleration enabled. This is an involved process, but there's no point in running the nets if you aren't GPU accelerated. This substep involves installing Cuda **9.0** (not 9.1), CuDNN **7.0** (not 7.1), and Ubuntu **16.04** (not 17 or 18).
+
+
 
 ### Cargo
 This is a Cargo project, built on nightly rust. `cargo` is Rust's module and build system, equivalent to node's `npm`.
