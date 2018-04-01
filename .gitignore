@@ -1,2 +1,7 @@
 target
 data
+bin
+include
+lib
+share
+pip-selfcheck.json
