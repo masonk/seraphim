@@ -24,6 +24,15 @@ Your job as a consumer of Seraphim is to implement `seraphim::search::GameExpert
 
 - [Nightly Rust](https://github.com/rust-lang-nursery/rustup.rs/#other-installation-methods)
 - C linker, such as `gcc`
+- openssl dev package
+
+    On Ubuntu:
+
+    ```
+    apt install libssl-dev
+    ```
+
+
 - [Python 3](https://www.tensorflow.org/install/install_linux#installing_with_virtualenv) 
    
    This is to run the Python scripts that build the tensorflow graphs used by the game experts. You can set up the seraphim repo as a Python3 virtualenv root by following the linked instructions.
