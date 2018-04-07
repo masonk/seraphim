@@ -676,11 +676,13 @@ pub mod sgf_replays {
     use gosgf;
 
     #[test]
+    #[ignore]
     fn game95_throws_no_errors() {
         do_one(PathBuf::from("data/jgdb/./sgf/test/0000/00000095.sgf")).unwrap();
     }
 
     #[test]
+    #[ignore]
     fn game189_has_6_handicap() {
         let file = File::open("data/jgdb/./sgf/test/0000/00000189.sgf").expect(&format!(
             "Couldn't open data/jgdb/./sgf/test/0000/00000189.sgf"
@@ -693,16 +695,19 @@ pub mod sgf_replays {
         assert_eq!(parse[0].handicap, 6);
     }
     #[test]
+    #[ignore]
     fn game189_completes() {
         do_one(PathBuf::from("data/jgdb/./sgf/test/0000/00000189.sgf")).unwrap();
     }
 
     #[test]
+    #[ignore]
     fn game4648_completes() {
         do_one(PathBuf::from("data/jgdb/./sgf/test/0004/00004648.sgf")).unwrap();
     }
 
     #[test]
+    #[ignore]
     fn can_parse_empty_nodes() {
         let path = "data/jgdb/./sgf/test/0001/00001470.sgf";
         let file = File::open(path.clone()).expect(&format!("Couldn't open path {:?}", path));
@@ -717,6 +722,7 @@ pub mod sgf_replays {
     }
 
     #[test]
+    #[ignore]
     fn game95_matches_expectation() {
         let moves = File::open("src/core/test/game95_moves.json").unwrap();
         let parse: Vec<Turn> = serde_json::from_reader(moves).unwrap();
@@ -740,11 +746,13 @@ pub mod sgf_replays {
     }
 
     #[test]
+    #[ignore]
     fn game_248_has_superko() {
         _assert_superko(PathBuf::from("data/jgdb/./sgf/test/0000/00000248.sgf"))
     }
 
     #[test]
+    #[ignore]
     fn game_836_has_superko() {
         _assert_superko(PathBuf::from("data/jgdb/./sgf/test/0000/00000836.sgf"))
     }

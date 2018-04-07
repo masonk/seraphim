@@ -16,9 +16,9 @@ print(os.path.join(outdir, outfile))
 # the location of the first player's stones in the first, and the second player's stones
 # in the second, and whose move it is in a final bool - 0 for first player, 1 for second player.
 x = tf.placeholder(tf.bool, shape=[1, 9 * 2 + 1], name ='x')
-y_true = tf.placeholder(tf.half, shape=[1, 9], name='y_true')
+y_true = tf.placeholder(tf.float32, shape=[1, 9], name='y_true')
 
-dense = tf.layers.dense(tf.cast(x, tf.half), units=64, activation=tf.nn.relu)
+dense = tf.layers.dense(tf.cast(x, tf.float32), units=64, activation=tf.nn.relu)
 logits = tf.layers.dense(dense, units=9, activation=tf.nn.relu)
 softmax = tf.nn.softmax(logits)
 
