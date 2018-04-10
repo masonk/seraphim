@@ -5,8 +5,8 @@
 #![feature(test)]
 
 pub mod go;
-pub mod tictactoe;
 pub mod search;
+pub mod tictactoe;
 
 extern crate gosgf;
 extern crate itertools;
@@ -18,8 +18,7 @@ extern crate test;
 extern crate vec_map;
 
 extern crate flexi_logger;
-#[macro_use]
-extern crate indoc;
+
 #[macro_use]
 extern crate log;
 extern crate petgraph;
@@ -28,3 +27,4 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
+extern crate tensorflow;

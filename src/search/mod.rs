@@ -33,15 +33,13 @@ pub trait GameExpert<State, Action>
 where
     State: ::std::hash::Hash,
 {
-    fn root(&self) -> State;
-
     // TODO: The AGZ paper minibatches the request for expert policies
     // into batches of 8 hypotheses. There should be a way of batching these requests
     // This has to come after multi-threading the search, since threads block
     // while waiting for their batch to accumulate.
     fn hypotheses(&self, state: &State) -> Hypotheses<Action>;
 
-    fn apply(&mut self, &State, &Action) -> State; // When MCTS choses an action for the first time, it will call this function to obtain the new state. Used during the MCTS leaf expansion step.
+    fn next(&mut self, &State, &Action) -> State; // When MCTS choses an action for the first time, it will call this function to obtain the new state. Used during the MCTS leaf expansion step.
 
     // What is the search::GameResult of this game? Search continues until it reaches a terminal (non-InProgress) state, and then backpropagates based on the final result of the game.
     // and then
@@ -107,47 +105,43 @@ impl SearchTreeOptions {
     }
 }
 #[derive(Debug)]
-pub struct SearchTree<G, State, Action>
+pub struct SearchTree<State, Action>
 where
     State: ::std::hash::Hash + ::std::fmt::Debug + ::std::fmt::Display,
-    G: GameExpert<State, Action>,
     Action: PartialEq + ::std::hash::Hash + ::std::fmt::Debug,
 {
     rand: rand::ThreadRng,
-    game_expert: G,
     search_tree: petgraph::stable_graph::StableGraph<Node<State>, Edge<Action>>,
     ply: u32,          // how many plys have been played at the root_idx
     root_idx: NodeIdx, // cur
     options: SearchTreeOptions,
 }
 
-impl<G, State, Action> SearchTree<G, State, Action>
+impl<State, Action> SearchTree<State, Action>
 where
     State: ::std::hash::Hash + ::std::fmt::Debug + ::std::fmt::Display,
-    G: GameExpert<State, Action>,
     Action: PartialEq + ::std::hash::Hash + ::std::fmt::Debug,
 {
+
     // Start a new game that will be played by iterative searching
-    pub fn init_with_options(game_expert: G, options: SearchTreeOptions) -> Self {
+    pub fn init_with_options(initial_state: State, options: SearchTreeOptions) -> Self {
         let mut search_tree = petgraph::stable_graph::StableGraph::new();
-        let root_state = game_expert.root();
-        let root_node = Node::new_unexpanded(root_state);
+        let root_node = Node::new_unexpanded(initial_state);
         let root_idx = search_tree.add_node(root_node);
 
         Self {
-            game_expert,
             search_tree,
-            options,
             ply: 0,
+            options,
             root_idx,
             rand: rand::thread_rng(),
         }
     }
-    pub fn init(game_expert: G) -> Self {
-        Self::init_with_options(game_expert, SearchTreeOptions::defaults())
+    pub fn init(initial_state: State) -> Self {
+        Self::init_with_options(initial_state, SearchTreeOptions::defaults())
     }
 
-    pub fn read_and_apply(&mut self) -> Action {
+    pub fn read_and_apply(&mut self, game_expert: &GameExpert<State, Action>) -> Action {
         /*
         Read the board by playing out a number of games according to the PUCB MCTS algorithm.
 
@@ -166,7 +160,7 @@ where
         The GameExpert should train itself to be more likely to pick the same value that the tree search picked.
         */
         for _ in 0..self.options.readouts {
-            self.read_one(self.root_idx);
+            self.read_one(self.root_idx, game_expert);
         }
 
         let visits: Vec<(u32, EdgeIdx, NodeIdx)> = self.search_tree
@@ -225,19 +219,19 @@ where
     }
     // recursively follow the search to a terminal node (A node where GameResult is not InProgress),
     // then back up the tree, updating edge weights.
-    fn read_one(&mut self, node_idx: NodeIdx) {
+    fn read_one(&mut self, node_idx: NodeIdx, game_expert: &GameExpert<State, Action>) {
         let self_ptr = self as *mut Self;
         unsafe {
             let node = (*self_ptr).search_tree.node_weight_mut(node_idx).unwrap();
-            let result = self.game_expert.result(&node.state);
+            let result = game_expert.result(&node.state);
             match result {
                 GameResult::InProgress => {
                     if !node.expanded {
-                        self.expand(node_idx);
+                        self.expand(node_idx, game_expert);
                     }
-                    let next_idx = self.select_next_node(node_idx);
+                    let next_idx = self.select_next_node(node_idx, game_expert);
 
-                    return self.read_one(next_idx);
+                    return self.read_one(next_idx, game_expert);
                 }
                 _ => {
                     match result {
@@ -253,7 +247,7 @@ where
         }
     }
 
-    fn select_next_node(&self, idx: NodeIdx) -> NodeIdx {
+    fn select_next_node(&self, idx: NodeIdx, game_expert: &GameExpert<State, Action>) -> NodeIdx {
         /* in the AGZ paper
             The next node is the node with a that maximizes
             Q(s, a) + U(s, a)
@@ -327,11 +321,11 @@ where
         self.backup(reward * -1.0, parent_idx);
     }
     // Create an edge and a node for each possible move from this position
-    fn expand(&mut self, node_idx: NodeIdx) {
+    fn expand(&mut self, node_idx: NodeIdx, game_expert: &GameExpert<State, Action>) {
         {
             let node = &self.search_tree[node_idx];
             let state = &node.state;
-            let result = self.game_expert.result(state);
+            let result = game_expert.result(state);
 
             match &result {
                 &GameResult::InProgress => {}
@@ -346,14 +340,12 @@ where
                 actions,
                 move_probabilities,
                 ..
-            } = self.game_expert
-                .hypotheses(&self.search_tree[node_idx].state);
+            } = game_expert.hypotheses(&self.search_tree[node_idx].state);
 
             let states: Vec<(Action, State)> = actions
                 .into_iter()
                 .map(|action| {
-                    let new_state = self.game_expert
-                        .apply(&self.search_tree[node_idx].state, &action);
+                    let new_state = game_expert.next(&self.search_tree[node_idx].state, &action);
                     (action, new_state)
                 })
                 .collect();

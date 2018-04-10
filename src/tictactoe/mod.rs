@@ -1,10 +1,14 @@
 use flexi_logger;
-use indoc;
 use search;
 use search::GameResult;
+use std::error::Error;
 use std::fmt;
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
 use std::sync::{Once, ONCE_INIT};
 static _INIT: Once = ONCE_INIT;
+use tensorflow as tf;
 
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub enum MoveError {
@@ -24,7 +28,7 @@ pub struct State {
     pub plys: usize,
 }
 impl State {
-    pub fn new_game() -> Self {
+    pub fn new() -> Self {
         Self {
             board: [[false; 9]; 2],
             next_player: 0,
@@ -35,19 +39,19 @@ impl State {
     fn to_mark(player: usize) -> String {
         match player {
             0 => String::from("x"),
-            _ => String::from("o")
+            _ => String::from("o"),
         }
     }
     fn from_mark(c: char) -> usize {
         match c {
             'x' => 0,
             'o' => 1,
-            _ => panic!("unknown char '{}'", c)
+            _ => panic!("unknown char '{}'", c),
         }
     }
     fn from_str(s: &str) -> Result<Self, ParseError> {
         // whitespace is ignored, valid chars are 'x', 'o', "_"
-        let mut val = Self::new_game();
+        let mut val = Self::new();
         let mut plys = 0;
         let mut count = 0;
         let mut winner = GameResult::InProgress;
@@ -58,20 +62,18 @@ impl State {
         {
             match c {
                 'x' => {
-                    val.place_and_check_winner(i, 0)
-                        .map_err(|err| ParseError {
-                            msg: format!("{:?} when adding move {} @ {}", err, c, i),
-                        })?;
+                    val.place_and_check_winner(i, 0).map_err(|err| ParseError {
+                        msg: format!("{:?} when adding move {} @ {}", err, c, i),
+                    })?;
                     if winner == GameResult::InProgress {
                         winner = val.status;
                     }
                     plys += 1;
                 }
                 'o' => {
-                    val.place_and_check_winner(i, 1)
-                        .map_err(|err| ParseError {
-                            msg: format!("{:?} when parsing move {} @ {}", err, c, i),
-                        })?;
+                    val.place_and_check_winner(i, 1).map_err(|err| ParseError {
+                        msg: format!("{:?} when parsing move {} @ {}", err, c, i),
+                    })?;
                     if winner == GameResult::InProgress {
                         winner = val.status;
                     }
@@ -104,7 +106,7 @@ impl State {
         Ok(())
     }
     fn place_unchecked(&mut self, idx: usize, player: usize) -> Result<(), MoveError> {
-        if self.board[0][idx] || self.board[1][idx]  {
+        if self.board[0][idx] || self.board[1][idx] {
             trace!(
                 "Tried to place {} at {} but that was occupied \n{}",
                 Self::to_mark(player),
@@ -138,8 +140,7 @@ impl State {
     }
 
     fn all(&self, t: &str, i: usize, first: usize, second: usize, third: usize) -> bool {
-        let matches =
-            self.board[i][first] && self.board[i][second] && self.board[i][third];
+        let matches = self.board[i][first] && self.board[i][second] && self.board[i][third];
         matches
     }
     fn check_row(&self, idx: usize, player: usize) -> bool {
@@ -185,22 +186,162 @@ impl fmt::Display for State {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Copy)]
-pub struct GameExpert {
+#[derive(Debug)]
+pub struct DnnGameExpert {
     root_state: State,
+    graph: tf::Graph,
+    session: tf::Session,
 }
-impl GameExpert {
-    pub fn new(root_state: State) -> Self {
-        GameExpert { root_state }
-    }
-}
-impl search::GameExpert<State, usize> for GameExpert {
-    fn root(&self) -> State {
-        self.root_state
+impl DnnGameExpert {
+    fn load_graph(filename: &str) -> Result<tf::Graph, Box<Error>> {
+        if !Path::new(filename).exists() {
+            return Err(tf::Status::new_set(
+                tf::Code::NotFound,
+                &format!(
+                    "source bin/activate && python src/tictactoe/simple_net.py \
+                     to generate {} and try again.",
+                    filename
+                ),
+            ));
+        }
+
+        let mut proto = Vec::new();
+        File::open(filename)?.read_to_end(&mut proto)?;
+        let mut graph = tf::Graph::new();
+
+        graph.import_graph_def(&proto, &tf::ImportGraphDefOptions::new())?;
+        Ok(graph)
     }
 
+    pub fn from_saved_model(model_filename: &str) -> Result<Self, Box<Error>> {
+        let filename = "src/tictactoe/simple_net.pb";
+        let mut graph = Self::load_graph(filename)?;
+
+        let mut session = tf::Session::new(&tf::SessionOptions::new(), &graph)?;
+        let op_load = graph.operation_by_name_required("save/restore_all")?;
+        let mut step = tf::StepWithGraph::new();
+        let op_file_path = graph.operation_by_name_required("save/Const")?;
+        let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(model_filename));
+
+        step.add_input(&op_file_path, 0, &file_path_tensor);
+        step.add_target(&op_load);
+        session.run(&mut step)?;
+
+        Ok(DnnGameExpert {
+            root_state: self::State::new(),
+            graph: graph,
+            session: session,
+        })
+    }
+
+    pub fn init_with_random_weights(model_filename: &str) -> Result<Self, Box<Error>> {
+        let filename = "src/tictactoe/simple_net.pb";
+        let mut graph = Self::load_graph(filename)?;
+
+        let mut session = tf::Session::new(&tf::SessionOptions::new(), &graph)?;
+        let op_init = graph.operation_by_name_required("init")?;
+        let mut init_step = tf::StepWithGraph::new();
+        init_step.add_target(&op_init);
+        session.run(&mut init_step)?;
+
+        let op_file_path = graph.operation_by_name_required("save/Const")?;
+        let op_save = graph.operation_by_name_required("save/control_dependency")?;
+        let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(model_filename));
+        let mut saver_step = tf::StepWithGraph::new();
+        saver_step.add_input(&op_file_path, 0, &file_path_tensor);
+        saver_step.add_target(&op_save);
+        session.run(&mut saver_step)?;
+
+        Self::from_saved_model(model_filename)
+    }
+
+    pub fn train(&mut self, n: usize) -> Result<(), Box<Error>> {
+        let op_x = self.graph.operation_by_name_required("x")?;
+        let op_y_true = self.graph.operation_by_name_required("y_true")?;
+        let op_train = self.graph.operation_by_name_required("train")?;
+
+        let mut options = search::SearchTreeOptions::defaults();
+        options.readouts = 1500;
+        options.tempering_point = 1;
+        options.cpuct = 0.1;
+
+        // Does SearchTree own a GameExpert or does GameExpert own a SearchTree?
+        let initial_search_state = State::new();
+        let game = initial_search_state.clone(); 
+        let mut search = search::SearchTree::init_with_options(initial_search_state, options);
+        for _ in 0..n {
+            loop {
+                if let search::GameResult::InProgress = game.status {
+                    let next = search.read_and_apply(self);
+                    game.play(next).unwrap();
+
+                    // x is game state
+                    // next goes into y_true for training
+                    let mut x = tf::Tensor::new(&[1, 19]);
+                    let mut y_true = tf::Tensor::new(&[1, 9]);
+
+                    y_true[next] = 1.0f32;
+
+                    for i in 0..2 {
+                        for j in 0..9 {
+                            x[i * 9 + j] = game.board[i][j];
+                        }
+                    }
+                    x[18] = match game.next_player {
+                        0 => false,
+                        _ => true,
+                    };
+
+                    println!("{:?}", x);
+                    println!("{:?}", y_true);
+                    let mut train_step = tf::StepWithGraph::new();
+                    train_step.add_input(&op_x, 0, &x);
+                    train_step.add_input(&op_y_true, 0, &y_true);
+                    train_step.add_target(&op_train);
+                    self.session.run(&mut train_step)?;
+                } else {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+// impl search::GameExpert<State, usize> for DnnGameExpert {
+//     // TODO: The AGZ paper minibatches the request for expert policies
+//     // into batches of 8 hypotheses. There should be a way of batching these requests
+//     // This has to come after multi-threading the search, since threads block
+//     // while waiting for their batch to accumulate.
+//     fn hypotheses(&self, state: &State) -> search::Hypotheses<usize> {
+
+//     }
+
+//     fn next(&mut self, state: &State, action: &usize) -> State {
+//         let mut clone = state.clone();
+//         clone.play(*action).unwrap();
+//         clone
+//     }
+
+//     fn result(&self, state: &State) -> search::GameResult {
+//         state.status
+//     }
+// }
+
+/*
+* This game expert suggests moves by assigning equal probability to all legal moves.
+*/
+#[derive(Clone, Debug, PartialEq, Copy)]
+pub struct DumbGameExpert {
+}
+impl DumbGameExpert {
+    pub fn new() -> Self {
+        DumbGameExpert {  }
+    }
+}
+impl search::GameExpert<State, usize> for DumbGameExpert {
     fn hypotheses(&self, state: &State) -> search::Hypotheses<usize> {
-        let actions = (0..9).into_iter()
+        let actions = (0..9)
+            .into_iter()
             .filter(|&i| !(state.board[0][i] || state.board[1][i]))
             .collect::<Vec<usize>>();
         let len = actions.len() as f32;
@@ -213,7 +354,7 @@ impl search::GameExpert<State, usize> for GameExpert {
             to_win: 0.5,
         }
     }
-    fn apply(&mut self, state: &State, action: &usize) -> State {
+    fn next(&mut self, state: &State, action: &usize) -> State {
         let mut clone = state.clone();
         clone.play(*action).unwrap();
         clone
@@ -248,16 +389,16 @@ mod expert {
         let mut draw = 0;
         let n = 500;
         for _ in 0..n {
-            let game_expert = GameExpert::new(State::new_game());
-            let mut game = State::new_game();
+            let game_expert = DumbGameExpert::new();
+            let mut game = State::new();
             let mut options = search::SearchTreeOptions::defaults();
             options.readouts = 1000;
             options.tempering_point = 1;
             options.cpuct = 2.0;
-            let mut search = search::SearchTree::init_with_options(game_expert, options);
+            let mut search = search::SearchTree::init_with_options(State::new(), options);
             loop {
                 if let GameResult::InProgress = game.status {
-                    let next = search.read_and_apply();
+                    let next = search.read_and_apply(&game_expert);
                     game.play(next).unwrap();
                 } else {
                     if game.status == GameResult::TerminatedWithoutResult {
@@ -283,16 +424,16 @@ mod expert {
         for readouts in readouts.iter() {
             let mut draw = 0;
             for _ in 0..n {
-                let game_expert = GameExpert::new(State::new_game());
-                let mut game = State::new_game();
+                let game_expert = DumbGameExpert::new();
+                let mut game = State::new();
                 let mut options = search::SearchTreeOptions::defaults();
                 options.readouts = *readouts;
                 options.tempering_point = 1; // start from a random position, then always play the best move
                 options.cpuct = 3.0;
-                let mut search = search::SearchTree::init_with_options(game_expert, options);
+                let mut search = search::SearchTree::init_with_options(State::new(), options);
                 loop {
                     if let GameResult::InProgress = game.status {
-                        let next = search.read_and_apply();
+                        let next = search.read_and_apply(&game_expert);
                         game.play(next).unwrap();
                     } else {
                         if game.status == GameResult::TerminatedWithoutResult {
@@ -311,21 +452,21 @@ mod expert {
 
     #[test]
     fn search_blocks_immediate_loss() {
-        let game = State::from_str(indoc!(
+        let game = State::from_str(
             "\
             |_|_|o|
             |o|x|_|
             |x|_|o|"
-        )).expect("Couldn't parse board.");
-        let game_expert = GameExpert::new(game.clone());
+        ).expect("Couldn't parse board.");
+        let game_expert = DumbGameExpert::new();
         let options = search::SearchTreeOptions {
             readouts: 1500,
             tempering_point: 0,
             cpuct: 0.5,
         };
 
-        let mut search = search::SearchTree::init_with_options(game_expert, options);
-        let next = search.read_and_apply();
+        let mut search = search::SearchTree::init_with_options(game.clone(), options);
+        let next = search.read_and_apply(&game_expert);
         assert_eq!(next, 5);
     }
 
@@ -334,16 +475,16 @@ mod expert {
         _setup_test();
 
         for _ in 0..10 {
-            let game_expert = GameExpert::new(State::new_game());
-            let mut game = State::new_game();
+            let game_expert = DumbGameExpert::new();
+            let mut game = State::new();
             let mut options = search::SearchTreeOptions::defaults();
             options.readouts = 1500;
             options.tempering_point = 1;
             options.cpuct = 0.1;
-            let mut search = search::SearchTree::init_with_options(game_expert, options);
+            let mut search = search::SearchTree::init_with_options(State::new(), options);
             loop {
                 if let GameResult::InProgress = game.status {
-                    let next = search.read_and_apply();
+                    let next = search.read_and_apply(&game_expert);
                     game.play(next).unwrap();
                 } else {
                     break;
@@ -360,12 +501,12 @@ mod basic {
     #[test]
     fn parse_empty_board() {
         _setup_test();
-        let state = State::from_str(indoc!(
+        let state = State::from_str(
             "\
             _ _ _
             _ _ _
-            _ _ _"
-        )).expect("Couldn't parse an empty board");
+            _ _ _",
+        ).expect("Couldn't parse an empty board");
 
         println!("{}", state);
         println!("{:?}", state);
@@ -374,12 +515,12 @@ mod basic {
     #[test]
     fn parse_a_board() {
         _setup_test();
-        let state = State::from_str(indoc!(
+        let state = State::from_str(
             "\
             o x o
             _ x _
-            _ o _"
-        )).expect("Couldn't parse");
+            _ o _",
+        ).expect("Couldn't parse");
 
         println!("{}", state);
     }
@@ -387,12 +528,12 @@ mod basic {
     #[test]
     fn o_wins_row() {
         _setup_test();
-        let state = State::from_str(indoc!(
+        let state = State::from_str(
             "\
             o x o
             _ x x
-            o o o"
-        )).expect("Couldn't parse");
+            o o o",
+        ).expect("Couldn't parse");
 
         trace!("{}", state);
 
@@ -403,12 +544,12 @@ mod basic {
     #[test]
     fn x_wins_col() {
         _setup_test();
-        let state = State::from_str(indoc!(
+        let state = State::from_str(
             "\
             o x o
             _ x _
-            _ x _"
-        )).expect("Couldn't parse");
+            _ x _",
+        ).expect("Couldn't parse");
 
         trace!("{}", state);
     }
@@ -416,12 +557,12 @@ mod basic {
     #[test]
     fn x_wins_nw_diag() {
         _setup_test();
-        let state = State::from_str(indoc!(
+        let state = State::from_str(
             "\
             x _ x
             o x o
-            _ o x"
-        )).expect("Couldn't parse");
+            _ o x",
+        ).expect("Couldn't parse");
 
         trace!("{}", state);
 
@@ -432,12 +573,12 @@ mod basic {
     #[test]
     fn o_wins_ne_diag() {
         _setup_test();
-        let state = State::from_str(indoc!(
+        let state = State::from_str(
             "\
             _ x o
             _ o _
-            o x x"
-        )).expect("Couldn't parse");
+            o x x",
+        ).expect("Couldn't parse");
 
         trace!("{}", state);
 
