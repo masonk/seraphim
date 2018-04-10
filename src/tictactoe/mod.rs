@@ -1,7 +1,6 @@
 use flexi_logger;
 use search;
 use search::GameResult;
-use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
@@ -186,6 +185,8 @@ impl fmt::Display for State {
     }
 }
 
+type BoxError = Box<::std::error::Error>;
+
 #[derive(Debug)]
 pub struct DnnGameExpert {
     root_state: State,
@@ -193,16 +194,15 @@ pub struct DnnGameExpert {
     session: tf::Session,
 }
 impl DnnGameExpert {
-    fn load_graph(filename: &str) -> Result<tf::Graph, Box<Error>> {
+    fn load_graph(filename: &str) -> Result<tf::Graph, BoxError> {
         if !Path::new(filename).exists() {
-            return Err(tf::Status::new_set(
+            return Err(Box::new(tf::Status::new_set(
                 tf::Code::NotFound,
                 &format!(
                     "source bin/activate && python src/tictactoe/simple_net.py \
                      to generate {} and try again.",
                     filename
-                ),
-            ));
+                )).unwrap()));
         }
 
         let mut proto = Vec::new();
@@ -213,19 +213,22 @@ impl DnnGameExpert {
         Ok(graph)
     }
 
-    pub fn from_saved_model(model_filename: &str) -> Result<Self, Box<Error>> {
+    pub fn from_saved_model(model_filename: &str) -> Result<Self, BoxError> {
         let filename = "src/tictactoe/simple_net.pb";
-        let mut graph = Self::load_graph(filename)?;
+        let graph = Self::load_graph(filename)?;
 
         let mut session = tf::Session::new(&tf::SessionOptions::new(), &graph)?;
         let op_load = graph.operation_by_name_required("save/restore_all")?;
-        let mut step = tf::StepWithGraph::new();
         let op_file_path = graph.operation_by_name_required("save/Const")?;
         let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(model_filename));
+        
+        {
+            let mut step = tf::StepWithGraph::new();
+            step.add_input(&op_file_path, 0, &file_path_tensor);
+            step.add_target(&op_load);
+            session.run(&mut step)?;
+        }
 
-        step.add_input(&op_file_path, 0, &file_path_tensor);
-        step.add_target(&op_load);
-        session.run(&mut step)?;
 
         Ok(DnnGameExpert {
             root_state: self::State::new(),
@@ -234,9 +237,9 @@ impl DnnGameExpert {
         })
     }
 
-    pub fn init_with_random_weights(model_filename: &str) -> Result<Self, Box<Error>> {
+    pub fn init_with_random_weights(model_filename: &str) -> Result<Self, BoxError> {
         let filename = "src/tictactoe/simple_net.pb";
-        let mut graph = Self::load_graph(filename)?;
+        let graph = Self::load_graph(filename)?;
 
         let mut session = tf::Session::new(&tf::SessionOptions::new(), &graph)?;
         let op_init = graph.operation_by_name_required("init")?;
@@ -255,7 +258,22 @@ impl DnnGameExpert {
         Self::from_saved_model(model_filename)
     }
 
-    pub fn train(&mut self, n: usize) -> Result<(), Box<Error>> {
+    fn state_tensor(state: &State) -> tf::Tensor<bool> {
+        let mut x = tf::Tensor::new(&[1, 19]);
+        for i in 0..2 {
+            for j in 0..9 {
+                x[i * 9 + j] = state.board[i][j];
+            }
+        }
+
+        x[18] = match state.next_player {
+            0 => false,
+            _ => true,
+        };
+        x
+    }
+
+    pub fn train(&mut self, n: usize) -> Result<(), BoxError> {
         let op_x = self.graph.operation_by_name_required("x")?;
         let op_y_true = self.graph.operation_by_name_required("y_true")?;
         let op_train = self.graph.operation_by_name_required("train")?;
@@ -267,7 +285,7 @@ impl DnnGameExpert {
 
         // Does SearchTree own a GameExpert or does GameExpert own a SearchTree?
         let initial_search_state = State::new();
-        let game = initial_search_state.clone(); 
+        let mut game = initial_search_state.clone();
         let mut search = search::SearchTree::init_with_options(initial_search_state, options);
         for _ in 0..n {
             loop {
@@ -277,20 +295,9 @@ impl DnnGameExpert {
 
                     // x is game state
                     // next goes into y_true for training
-                    let mut x = tf::Tensor::new(&[1, 19]);
+                    let x = Self::state_tensor(&game);
                     let mut y_true = tf::Tensor::new(&[1, 9]);
-
                     y_true[next] = 1.0f32;
-
-                    for i in 0..2 {
-                        for j in 0..9 {
-                            x[i * 9 + j] = game.board[i][j];
-                        }
-                    }
-                    x[18] = match game.next_player {
-                        0 => false,
-                        _ => true,
-                    };
 
                     println!("{:?}", x);
                     println!("{:?}", y_true);
@@ -307,39 +314,58 @@ impl DnnGameExpert {
         Ok(())
     }
 }
-// impl search::GameExpert<State, usize> for DnnGameExpert {
-//     // TODO: The AGZ paper minibatches the request for expert policies
-//     // into batches of 8 hypotheses. There should be a way of batching these requests
-//     // This has to come after multi-threading the search, since threads block
-//     // while waiting for their batch to accumulate.
-//     fn hypotheses(&self, state: &State) -> search::Hypotheses<usize> {
+impl search::GameExpert<State, usize> for DnnGameExpert {
+    // TODO: The AGZ paper minibatches the request for expert policies
+    // into batches of 8 hypotheses. There should be a way of batching these requests
+    // This has to come after multi-threading the search, since threads block
+    // while waiting for their batch to accumulate.
+    fn hypotheses(&mut self, state: &State) -> search::Hypotheses<usize> {
+        let op_x = self.graph.operation_by_name_required("x").unwrap();
+        let softmax = self.graph.operation_by_name_required("softmax").unwrap();
 
-//     }
+        let state_tensor = Self::state_tensor(state);
+        let mut move_probabilities = Vec::with_capacity(9);
 
-//     fn next(&mut self, state: &State, action: &usize) -> State {
-//         let mut clone = state.clone();
-//         clone.play(*action).unwrap();
-//         clone
-//     }
+        {
+            let mut inference_step = tf::StepWithGraph::new();
+            inference_step.add_input(&op_x, 0, &state_tensor);
+            let softmax_output_token = inference_step.request_output(&softmax, 0);
+            self.session.run(&mut inference_step);
+            let inferences = inference_step.take_output(softmax_output_token).unwrap();
+            move_probabilities.copy_from_slice(&inferences[..]);
+        }
 
-//     fn result(&self, state: &State) -> search::GameResult {
-//         state.status
-//     }
-// }
+        search::Hypotheses {
+            actions:vec![0, 1, 2, 3, 4, 5, 6, 7, 8],
+            move_probabilities,
+            to_win: 0.5
+        }
+        
+    }
+
+    fn next(&mut self, state: &State, action: &usize) -> State {
+        let mut clone = state.clone();
+        clone.play(*action).unwrap();
+        clone
+    }
+
+    fn result(&self, state: &State) -> search::GameResult {
+        state.status
+    }
+}
 
 /*
 * This game expert suggests moves by assigning equal probability to all legal moves.
 */
 #[derive(Clone, Debug, PartialEq, Copy)]
-pub struct DumbGameExpert {
-}
+pub struct DumbGameExpert {}
 impl DumbGameExpert {
     pub fn new() -> Self {
-        DumbGameExpert {  }
+        DumbGameExpert {}
     }
 }
 impl search::GameExpert<State, usize> for DumbGameExpert {
-    fn hypotheses(&self, state: &State) -> search::Hypotheses<usize> {
+    fn hypotheses(&mut self, state: &State) -> search::Hypotheses<usize> {
         let actions = (0..9)
             .into_iter()
             .filter(|&i| !(state.board[0][i] || state.board[1][i]))
@@ -389,7 +415,7 @@ mod expert {
         let mut draw = 0;
         let n = 500;
         for _ in 0..n {
-            let game_expert = DumbGameExpert::new();
+            let mut game_expert = DumbGameExpert::new();
             let mut game = State::new();
             let mut options = search::SearchTreeOptions::defaults();
             options.readouts = 1000;
@@ -398,7 +424,7 @@ mod expert {
             let mut search = search::SearchTree::init_with_options(State::new(), options);
             loop {
                 if let GameResult::InProgress = game.status {
-                    let next = search.read_and_apply(&game_expert);
+                    let next = search.read_and_apply(&mut game_expert);
                     game.play(next).unwrap();
                 } else {
                     if game.status == GameResult::TerminatedWithoutResult {
@@ -424,7 +450,7 @@ mod expert {
         for readouts in readouts.iter() {
             let mut draw = 0;
             for _ in 0..n {
-                let game_expert = DumbGameExpert::new();
+                let mut game_expert = DumbGameExpert::new();
                 let mut game = State::new();
                 let mut options = search::SearchTreeOptions::defaults();
                 options.readouts = *readouts;
@@ -433,7 +459,7 @@ mod expert {
                 let mut search = search::SearchTree::init_with_options(State::new(), options);
                 loop {
                     if let GameResult::InProgress = game.status {
-                        let next = search.read_and_apply(&game_expert);
+                        let next = search.read_and_apply(&mut game_expert);
                         game.play(next).unwrap();
                     } else {
                         if game.status == GameResult::TerminatedWithoutResult {
@@ -456,9 +482,9 @@ mod expert {
             "\
             |_|_|o|
             |o|x|_|
-            |x|_|o|"
+            |x|_|o|",
         ).expect("Couldn't parse board.");
-        let game_expert = DumbGameExpert::new();
+        let mut game_expert = DumbGameExpert::new();
         let options = search::SearchTreeOptions {
             readouts: 1500,
             tempering_point: 0,
@@ -466,7 +492,7 @@ mod expert {
         };
 
         let mut search = search::SearchTree::init_with_options(game.clone(), options);
-        let next = search.read_and_apply(&game_expert);
+        let next = search.read_and_apply(&mut game_expert);
         assert_eq!(next, 5);
     }
 
@@ -475,7 +501,7 @@ mod expert {
         _setup_test();
 
         for _ in 0..10 {
-            let game_expert = DumbGameExpert::new();
+            let mut game_expert = DumbGameExpert::new();
             let mut game = State::new();
             let mut options = search::SearchTreeOptions::defaults();
             options.readouts = 1500;
@@ -484,7 +510,7 @@ mod expert {
             let mut search = search::SearchTree::init_with_options(State::new(), options);
             loop {
                 if let GameResult::InProgress = game.status {
-                    let next = search.read_and_apply(&game_expert);
+                    let next = search.read_and_apply(&mut game_expert);
                     game.play(next).unwrap();
                 } else {
                     break;

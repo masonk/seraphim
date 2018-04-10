@@ -37,7 +37,7 @@ where
     // into batches of 8 hypotheses. There should be a way of batching these requests
     // This has to come after multi-threading the search, since threads block
     // while waiting for their batch to accumulate.
-    fn hypotheses(&self, state: &State) -> Hypotheses<Action>;
+    fn hypotheses(&mut self, state: &State) -> Hypotheses<Action>;
 
     fn next(&mut self, &State, &Action) -> State; // When MCTS choses an action for the first time, it will call this function to obtain the new state. Used during the MCTS leaf expansion step.
 
@@ -141,7 +141,7 @@ where
         Self::init_with_options(initial_state, SearchTreeOptions::defaults())
     }
 
-    pub fn read_and_apply(&mut self, game_expert: &GameExpert<State, Action>) -> Action {
+    pub fn read_and_apply(&mut self, game_expert: &mut GameExpert<State, Action>) -> Action {
         /*
         Read the board by playing out a number of games according to the PUCB MCTS algorithm.
 
@@ -219,7 +219,7 @@ where
     }
     // recursively follow the search to a terminal node (A node where GameResult is not InProgress),
     // then back up the tree, updating edge weights.
-    fn read_one(&mut self, node_idx: NodeIdx, game_expert: &GameExpert<State, Action>) {
+    fn read_one(&mut self, node_idx: NodeIdx, game_expert: &mut GameExpert<State, Action>) {
         let self_ptr = self as *mut Self;
         unsafe {
             let node = (*self_ptr).search_tree.node_weight_mut(node_idx).unwrap();
@@ -247,7 +247,7 @@ where
         }
     }
 
-    fn select_next_node(&self, idx: NodeIdx, game_expert: &GameExpert<State, Action>) -> NodeIdx {
+    fn select_next_node(&self, idx: NodeIdx, game_expert: &mut GameExpert<State, Action>) -> NodeIdx {
         /* in the AGZ paper
             The next node is the node with a that maximizes
             Q(s, a) + U(s, a)
@@ -321,7 +321,7 @@ where
         self.backup(reward * -1.0, parent_idx);
     }
     // Create an edge and a node for each possible move from this position
-    fn expand(&mut self, node_idx: NodeIdx, game_expert: &GameExpert<State, Action>) {
+    fn expand(&mut self, node_idx: NodeIdx, game_expert: &mut GameExpert<State, Action>) {
         {
             let node = &self.search_tree[node_idx];
             let state = &node.state;

@@ -21,7 +21,7 @@ saver = tf.train.Saver(tf.global_variables())
 
 dense = tf.layers.dense(tf.cast(x, tf.float32), units=64, activation=tf.nn.relu)
 logits = tf.layers.dense(dense, units=9, activation=tf.nn.relu)
-softmax = tf.nn.softmax(logits)
+softmax = tf.nn.softmax(logits, name='softmax')
 
 sess = tf.Session()
 init = tf.variables_initializer(tf.global_variables(), name='init')
