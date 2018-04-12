@@ -92,9 +92,15 @@ impl State {
                 msg: format!("{} only contained {} marks", s, count),
             });
         }
+
         val.plys = plys;
         val.status = winner;
         val.next_player = plys % 2;
+        trace!(
+            "{} plys have been played. NExt player is {}",
+            val.plys,
+            val.next_player
+        );
 
         Ok(val)
     }
@@ -196,13 +202,16 @@ pub struct DnnGameExpert {
 impl DnnGameExpert {
     fn load_graph(filename: &str) -> Result<tf::Graph, BoxError> {
         if !Path::new(filename).exists() {
-            return Err(Box::new(tf::Status::new_set(
-                tf::Code::NotFound,
-                &format!(
-                    "source bin/activate && python src/tictactoe/simple_net.py \
-                     to generate {} and try again.",
-                    filename
-                )).unwrap()));
+            return Err(Box::new(
+                tf::Status::new_set(
+                    tf::Code::NotFound,
+                    &format!(
+                        "source bin/activate && python src/tictactoe/simple_net.py \
+                         to generate {} and try again.",
+                        filename
+                    ),
+                ).unwrap(),
+            ));
         }
 
         let mut proto = Vec::new();
@@ -221,14 +230,13 @@ impl DnnGameExpert {
         let op_load = graph.operation_by_name_required("save/restore_all")?;
         let op_file_path = graph.operation_by_name_required("save/Const")?;
         let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(model_filename));
-        
+
         {
             let mut step = tf::StepWithGraph::new();
             step.add_input(&op_file_path, 0, &file_path_tensor);
             step.add_target(&op_load);
             session.run(&mut step)?;
         }
-
 
         Ok(DnnGameExpert {
             root_state: self::State::new(),
@@ -336,11 +344,10 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
         }
 
         search::Hypotheses {
-            actions:vec![0, 1, 2, 3, 4, 5, 6, 7, 8],
+            actions: vec![0, 1, 2, 3, 4, 5, 6, 7, 8],
             move_probabilities,
-            to_win: 0.5
+            to_win: 0.5,
         }
-        
     }
 
     fn next(&mut self, state: &State, action: &usize) -> State {
@@ -533,9 +540,6 @@ mod basic {
             _ _ _
             _ _ _",
         ).expect("Couldn't parse an empty board");
-
-        println!("{}", state);
-        println!("{:?}", state);
     }
 
     #[test]
@@ -547,8 +551,6 @@ mod basic {
             _ x _
             _ o _",
         ).expect("Couldn't parse");
-
-        println!("{}", state);
     }
 
     #[test]
@@ -556,7 +558,7 @@ mod basic {
         _setup_test();
         let state = State::from_str(
             "\
-            o x o
+            o x x
             _ x x
             o o o",
         ).expect("Couldn't parse");
@@ -564,7 +566,7 @@ mod basic {
         trace!("{}", state);
 
         assert_eq!(state.status, GameResult::LastPlayerWon);
-        assert_eq!(state.next_player, 1);
+        assert_eq!(state.next_player, 0);
     }
 
     #[test]

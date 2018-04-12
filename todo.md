@@ -1,5 +1,6 @@
 - Implement a game expert with a trainable net
-    - Save the model to disk & implement summary metrics for Tensorboard
+    - Save the model to disk & restore
+    - implement summary metrics for Tensorboard
     - Separate read_and_apply into read() -> Action and apply(a: Action)
 
 - Why does 200 readouts of TTT consistently underperform 100 readouts?
