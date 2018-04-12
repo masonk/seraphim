@@ -245,7 +245,7 @@ impl DnnGameExpert {
         })
     }
 
-    pub fn init_with_random_weights(model_filename: &str) -> Result<Self, BoxError> {
+    pub fn init_with_random_weights() -> Result<Self, BoxError> {
         let filename = "src/tictactoe/simple_net.pb";
         let graph = Self::load_graph(filename)?;
 
@@ -257,13 +257,13 @@ impl DnnGameExpert {
 
         let op_file_path = graph.operation_by_name_required("save/Const")?;
         let op_save = graph.operation_by_name_required("save/control_dependency")?;
-        let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(model_filename));
+        let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(filename));
         let mut saver_step = tf::StepWithGraph::new();
         saver_step.add_input(&op_file_path, 0, &file_path_tensor);
         saver_step.add_target(&op_save);
         session.run(&mut saver_step)?;
 
-        Self::from_saved_model(model_filename)
+        Self::from_saved_model(filename)
     }
 
     fn state_tensor(state: &State) -> tf::Tensor<bool> {
