@@ -6,20 +6,21 @@ use rand::Rng;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GameResult {
     InProgress,
-    TerminatedWithoutResult,
+    TerminatedWithoutResult ,
     LastPlayerWon,
     LastPlayerLost,
 }
 
-pub struct Hypotheses<Action> {
-    pub actions: Vec<Action>, // Each legal action available from the a certain State
-    pub move_probabilities: Vec<f32>, // The prior probability that each action is the best. These should be in the same order as the corresponding actions Vec
-    pub to_win: f32,                  // The probability that the next player will win the game
+pub struct Hypotheses<Action>
+{ 
+    pub legal_actions: Vec<(Action, f32)>,
+    pub to_win: f32,
 }
 
-pub struct SearchResult<Action> {
-    next_move: Action,              // the chosen Action
-    hypotheses: Hypotheses<Action>, // for training the expert
+pub struct SearchResult<Action> 
+{
+    pub next_move: Action,              // the chosen Action
+    pub hypotheses: Hypotheses<Action>, // for training the expert
 }
 /* 
 The expert that guides the MCTS search is abstracted by the GameExpert trait, which users of this library are to implement.  The GameExpert knows the rules of the game it's playing, and also has bayesian prior beliefs about which moves are best to play and the probability that the next player will ultimately win the game.
@@ -196,7 +197,6 @@ where
                 .max_by_key(|&(edge_idx, _)| self.search_tree[edge_idx].visit_count)
                 .unwrap();
             //todo: Discard unreachable edges
-            trace!("{:?} {:?}", selected_edge, selected_node);
             self.ply += 1;
             self.root_idx = selected_node;
             let edge = self.search_tree.remove_edge(selected_edge).unwrap();
@@ -337,22 +337,13 @@ where
         {
             let self_ptr = self as *mut Self;
             let Hypotheses {
-                actions,
-                move_probabilities,
+                legal_actions,
                 ..
             } = game_expert.hypotheses(&self.search_tree[node_idx].state);
 
-            let states: Vec<(Action, State)> = actions
-                .into_iter()
-                .map(|action| {
-                    let new_state = game_expert.next(&self.search_tree[node_idx].state, &action);
-                    (action, new_state)
-                })
-                .collect();
+            for (action, prior) in legal_actions {
+                let new_state = game_expert.next(&self.search_tree[node_idx].state, &action);
 
-            for ((action, new_state), prior) in
-                states.into_iter().zip(move_probabilities.into_iter())
-            {
                 unsafe {
                     let leaf_idx = (*self_ptr)
                         .search_tree

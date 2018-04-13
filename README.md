@@ -70,6 +70,17 @@ This project requires nightly rust, because it uses feature gates. Use rustup to
 
 to verify the installation. A few tests might fail, such as `tictactoe::expert::increasing_readouts_improves_play`. But everything should build.
 
+### Training tictactoe
+
+`src/tictactoe` shows a full example of training a DNN using tensorflow. The training script is at `src/bin/train_tictactoe_simple.rs`
+
+You can run the training example with tracing enabled to see the whole algorithm at work.
+
+```
+export RUST_LOG=seraphim,train=trace
+cargo run --bin train_tictactoe_simple
+```
+
 ## The PUCT algorithm
 
 For a given game state s, the PUCT algorithm takes a fixed number of samples  of the available actions (1600 in the paper; configurable in Seraphim by changing `search::SearchTreeOptions::readouts`). For each action it samples, a new state is generated, and applies the same logic again from this new state, recursively, until it reaches a terminal state.

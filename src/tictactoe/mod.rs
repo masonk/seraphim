@@ -175,6 +175,7 @@ impl State {
         }
         String::from(" ")
     }
+
 }
 impl fmt::Display for State {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -313,8 +314,6 @@ impl DnnGameExpert {
             loop {
                 if let search::GameResult::InProgress = game.status {
                     let next = search.read_and_apply(self);
-                    trace!("{}", game);
-                    trace!("Found move: {}", next);
                     game.play(next).unwrap();
 
                     // x is game state
@@ -343,35 +342,59 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
     // while waiting for their batch to accumulate.
     fn hypotheses(&mut self, state: &State) -> search::Hypotheses<usize> {
 
-        trace!("Attemping to run inference step ...");
         trace!("{}", state);
         let op_x = self.graph.operation_by_name_required("x").unwrap();
         let softmax = self.graph.operation_by_name_required("softmax").unwrap();
         trace!("...success.");
 
         let state_tensor = Self::state_tensor(state);
-        let mut move_probabilities : Vec<f32> = Vec::with_capacity(9);
-
+        let mut legal_actions : Vec<(usize, f32)> = vec![];
         {
             let mut inference_step = tf::StepWithGraph::new();
             inference_step.add_input(&op_x, 0, &state_tensor);
             let softmax_output_token = inference_step.request_output(&softmax, 0);
 
-            trace!("Attemping to run inference step...");
-            self.session.run(&mut inference_step);
-            trace!("...success.");
+            self.session.run(&mut inference_step).expect("failed to run inference step");
 
             let inferences : tf::Tensor<f32> = inference_step.take_output(softmax_output_token).unwrap();
-            trace!("inferences:\n{:3?}", &inferences[0..9]);
+            trace!("raw inferences:");
+            for i in 0..3 {
+                let o = i * 3;
+                trace!("{0: <w$.w$} | {1: <w$.w$} | {2: <w$.w$}", inferences[o], inferences[o+1], inferences[o+2], w=5);
+            }
 
-            for i in 0..9 {
-                move_probabilities.push(inferences[i]);
+            let mut legal_probability = 0.0;
+            for i in (0..9).into_iter() {
+                let is_legal = !(state.board[0][i] || state.board[1][i]);
+                
+                if is_legal {
+                    legal_actions.push((i, inferences[i]));
+                    legal_probability += inferences[i];
+                }
+            }
+            // ax = 1
+            // a = 1 / x
+            let scale = 1.0 / legal_probability; // there must always be at least one legal action
+            for &mut(_, ref mut prior) in legal_actions.iter_mut() {
+                *prior *= scale;
+            }
+            trace!("redistributed inferences:");
+            let trcinf = (0..9).into_iter().map(|i| {
+               if state.board[0][i] || state.board[1][i] {
+                    0.0
+               } else {
+                    inferences[i] * scale
+               }
+            }).collect::<Vec<f32>>();
+
+            for i in 0..3 {
+                let o = i * 3;
+                trace!("{0: <w$.w$} | {1: <w$.w$} | {2: <w$.w$}", trcinf[o], trcinf[o+1], trcinf[o+2], w = 3);
             }
         }
 
         search::Hypotheses {
-            actions: vec![0, 1, 2, 3, 4, 5, 6, 7, 8],
-            move_probabilities,
+            legal_actions,
             to_win: 0.5,
         }
     }
@@ -399,17 +422,16 @@ impl DumbGameExpert {
 }
 impl search::GameExpert<State, usize> for DumbGameExpert {
     fn hypotheses(&mut self, state: &State) -> search::Hypotheses<usize> {
-        let actions = (0..9)
+        let prob = 1.0 / (9 - state.plys) as f32;
+
+        let legal_actions = (0..9)
             .into_iter()
             .filter(|&i| !(state.board[0][i] || state.board[1][i]))
-            .collect::<Vec<usize>>();
-        let len = actions.len() as f32;
-
-        let move_probabilities = actions.iter().map(|_| 1.0 / len).collect::<Vec<f32>>();
-
+            .map(|i| (i, prob))
+            .collect::<Vec<(usize, f32)>>();
+        
         search::Hypotheses {
-            actions,
-            move_probabilities,
+            legal_actions,
             to_win: 0.5,
         }
     }
@@ -427,7 +449,7 @@ impl search::GameExpert<State, usize> for DumbGameExpert {
 fn _setup_test() {
     _INIT.call_once(|| {
         _init_env_logger();
-    });
+    });        
 }
 
 fn _init_env_logger() {
