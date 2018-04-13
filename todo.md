@@ -1,5 +1,5 @@
 - Implement a game expert with a trainable net
-    - Save the model to disk & restore
+    - Handle illegal moves. Restribute probability to legal moves?
     - implement summary metrics for Tensorboard
     - Separate read_and_apply into read() -> Action and apply(a: Action)
 

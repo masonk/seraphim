@@ -222,20 +222,23 @@ impl DnnGameExpert {
         Ok(graph)
     }
 
-    pub fn from_saved_model(model_filename: &str) -> Result<Self, BoxError> {
-        let filename = "src/tictactoe/simple_net.pb";
-        let graph = Self::load_graph(filename)?;
+    pub fn from_saved_model(graph_filename: &str, model_filename: &str) -> Result<Self, BoxError> {
+        trace!("Attemping to load graph from '{}'", graph_filename);
+        let graph = Self::load_graph(graph_filename)?;
+        trace!("...success.");
 
         let mut session = tf::Session::new(&tf::SessionOptions::new(), &graph)?;
         let op_load = graph.operation_by_name_required("save/restore_all")?;
         let op_file_path = graph.operation_by_name_required("save/Const")?;
         let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(model_filename));
-
+        
         {
             let mut step = tf::StepWithGraph::new();
             step.add_input(&op_file_path, 0, &file_path_tensor);
             step.add_target(&op_load);
+            trace!("Attemping to load model from '{}' ...", model_filename);
             session.run(&mut step)?;
+            trace!("...success.");
         }
 
         Ok(DnnGameExpert {
@@ -245,25 +248,32 @@ impl DnnGameExpert {
         })
     }
 
-    pub fn init_with_random_weights() -> Result<Self, BoxError> {
-        let filename = "src/tictactoe/simple_net.pb";
-        let graph = Self::load_graph(filename)?;
+    pub fn init_with_random_weights(graph_filename: &str, model_filename: &str) -> Result<Self, BoxError> {
+        trace!("Attemping to loading graph from '{}'", graph_filename);
+        let graph = Self::load_graph(graph_filename)?;
+        trace!("...success");
 
         let mut session = tf::Session::new(&tf::SessionOptions::new(), &graph)?;
         let op_init = graph.operation_by_name_required("init")?;
         let mut init_step = tf::StepWithGraph::new();
         init_step.add_target(&op_init);
-        session.run(&mut init_step)?;
 
+        trace!("Attemping to initialize a new model at '{}'", model_filename);
+        session.run(&mut init_step)?;
+        trace!("...successs.");
+    
         let op_file_path = graph.operation_by_name_required("save/Const")?;
         let op_save = graph.operation_by_name_required("save/control_dependency")?;
-        let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(filename));
+        let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(model_filename));
         let mut saver_step = tf::StepWithGraph::new();
         saver_step.add_input(&op_file_path, 0, &file_path_tensor);
         saver_step.add_target(&op_save);
-        session.run(&mut saver_step)?;
 
-        Self::from_saved_model(filename)
+        trace!("Attemping to save model to '{}'", model_filename);
+        session.run(&mut saver_step)?;
+        trace!("...success)");
+
+        Self::from_saved_model(graph_filename, model_filename)
     }
 
     fn state_tensor(state: &State) -> tf::Tensor<bool> {
@@ -282,23 +292,29 @@ impl DnnGameExpert {
     }
 
     pub fn train(&mut self, n: usize) -> Result<(), BoxError> {
+        trace!("Attemping to load training ops...");
         let op_x = self.graph.operation_by_name_required("x")?;
         let op_y_true = self.graph.operation_by_name_required("y_true")?;
         let op_train = self.graph.operation_by_name_required("train")?;
+        trace!("..succcess.");
 
         let mut options = search::SearchTreeOptions::defaults();
         options.readouts = 1500;
         options.tempering_point = 1;
         options.cpuct = 0.1;
+        trace!("Beginning search & train with {:?}", options);
 
         // Does SearchTree own a GameExpert or does GameExpert own a SearchTree?
         let initial_search_state = State::new();
         let mut game = initial_search_state.clone();
         let mut search = search::SearchTree::init_with_options(initial_search_state, options);
+        
         for _ in 0..n {
             loop {
                 if let search::GameResult::InProgress = game.status {
                     let next = search.read_and_apply(self);
+                    trace!("{}", game);
+                    trace!("Found move: {}", next);
                     game.play(next).unwrap();
 
                     // x is game state
@@ -307,8 +323,6 @@ impl DnnGameExpert {
                     let mut y_true = tf::Tensor::new(&[1, 9]);
                     y_true[next] = 1.0f32;
 
-                    println!("{:?}", x);
-                    println!("{:?}", y_true);
                     let mut train_step = tf::StepWithGraph::new();
                     train_step.add_input(&op_x, 0, &x);
                     train_step.add_input(&op_y_true, 0, &y_true);
@@ -328,19 +342,31 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
     // This has to come after multi-threading the search, since threads block
     // while waiting for their batch to accumulate.
     fn hypotheses(&mut self, state: &State) -> search::Hypotheses<usize> {
+
+        trace!("Attemping to run inference step ...");
+        trace!("{}", state);
         let op_x = self.graph.operation_by_name_required("x").unwrap();
         let softmax = self.graph.operation_by_name_required("softmax").unwrap();
+        trace!("...success.");
 
         let state_tensor = Self::state_tensor(state);
-        let mut move_probabilities = Vec::with_capacity(9);
+        let mut move_probabilities : Vec<f32> = Vec::with_capacity(9);
 
         {
             let mut inference_step = tf::StepWithGraph::new();
             inference_step.add_input(&op_x, 0, &state_tensor);
             let softmax_output_token = inference_step.request_output(&softmax, 0);
+
+            trace!("Attemping to run inference step...");
             self.session.run(&mut inference_step);
-            let inferences = inference_step.take_output(softmax_output_token).unwrap();
-            move_probabilities.copy_from_slice(&inferences[..]);
+            trace!("...success.");
+
+            let inferences : tf::Tensor<f32> = inference_step.take_output(softmax_output_token).unwrap();
+            trace!("inferences:\n{:3?}", &inferences[0..9]);
+
+            for i in 0..9 {
+                move_probabilities.push(inferences[i]);
+            }
         }
 
         search::Hypotheses {

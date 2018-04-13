@@ -17,7 +17,6 @@ print(os.path.join(outdir, outfile))
 # in the second, and whose move it is in a final bool - 0 for first player, 1 for second player.
 x = tf.placeholder(tf.bool, shape=[1, 9 * 2 + 1], name ='x')
 y_true = tf.placeholder(tf.float32, shape=[1, 9], name='y_true')
-saver = tf.train.Saver(tf.global_variables())
 
 dense = tf.layers.dense(tf.cast(x, tf.float32), units=64, activation=tf.nn.relu)
 logits = tf.layers.dense(dense, units=9, activation=tf.nn.relu)
@@ -30,6 +29,7 @@ sess.run(init)
 loss = tf.losses.mean_squared_error(labels=y_true, predictions=softmax)
 optimizer = tf.train.GradientDescentOptimizer(.01)
 train = optimizer.minimize(loss, name='train')
+saver = tf.train.Saver(tf.global_variables())
 
 definition = tf.Session().graph_def
 tf.train.write_graph(definition, outdir, outfile, as_text=False)
