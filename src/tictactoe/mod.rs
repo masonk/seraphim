@@ -248,6 +248,19 @@ impl DnnGameExpert {
             session: session,
         })
     }
+    pub fn save_model(graph: &tf::Graph, session: &mut tf::Session, model_filename: &str) -> Result<(), BoxError> {
+        let op_save = graph.operation_by_name_required("save/control_dependency")?;
+        let op_file_path = graph.operation_by_name_required("save/Const")?;
+        let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(model_filename));
+        let mut saver_step = tf::StepWithGraph::new();
+        saver_step.add_input(&op_file_path, 0, &file_path_tensor);
+        saver_step.add_target(&op_save);
+
+        trace!("Attemping to save model to '{}'", model_filename);
+        session.run(&mut saver_step)?;
+        trace!("...success)");
+        Ok(())
+    }
 
     pub fn init_with_random_weights(graph_filename: &str, model_filename: &str) -> Result<Self, BoxError> {
         trace!("Attemping to loading graph from '{}'", graph_filename);
@@ -263,17 +276,7 @@ impl DnnGameExpert {
         session.run(&mut init_step)?;
         trace!("...successs.");
     
-        let op_file_path = graph.operation_by_name_required("save/Const")?;
-        let op_save = graph.operation_by_name_required("save/control_dependency")?;
-        let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(model_filename));
-        let mut saver_step = tf::StepWithGraph::new();
-        saver_step.add_input(&op_file_path, 0, &file_path_tensor);
-        saver_step.add_target(&op_save);
-
-        trace!("Attemping to save model to '{}'", model_filename);
-        session.run(&mut saver_step)?;
-        trace!("...success)");
-
+        Self::save_model(&graph, &mut session, model_filename);
         Self::from_saved_model(graph_filename, model_filename)
     }
 
@@ -292,7 +295,7 @@ impl DnnGameExpert {
         x
     }
 
-    pub fn train(&mut self, n: usize) -> Result<(), BoxError> {
+    pub fn train_and_save(&mut self, n: usize, model_filepath: &str) -> Result<(), BoxError> {
         trace!("Attemping to load training ops...");
         let op_x = self.graph.operation_by_name_required("x")?;
         let op_y_true = self.graph.operation_by_name_required("y_true")?;
@@ -305,12 +308,11 @@ impl DnnGameExpert {
         options.cpuct = 0.1;
         trace!("Beginning search & train with {:?}", options);
 
-        // Does SearchTree own a GameExpert or does GameExpert own a SearchTree?
-        let initial_search_state = State::new();
-        let mut game = initial_search_state.clone();
-        let mut search = search::SearchTree::init_with_options(initial_search_state, options);
-        
-        for _ in 0..n {
+        for i in 0..n {
+            trace!("game {}", i);
+            let initial_search_state = State::new();
+            let mut game = initial_search_state.clone();
+            let mut search = search::SearchTree::init_with_options(initial_search_state, options.clone());
             loop {
                 if let search::GameResult::InProgress = game.status {
                     let next = search.read_and_apply(self);
@@ -332,6 +334,8 @@ impl DnnGameExpert {
                 }
             }
         }
+        Self::save_model(&self.graph, &mut self.session, model_filepath)?;
+
         Ok(())
     }
 }
