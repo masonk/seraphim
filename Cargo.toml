@@ -8,10 +8,6 @@ left-pad = "1.0.0"
 regex = "0.2.0"
 clippy = { version = "*", optional = true }
 vec_map = "*"
-itertools = "0.7.3"
-serde = "1.0"
-serde_derive = "1.0"
-serde_json = "1.0"
 log = { version = "0.4", features = ["max_level_trace", "release_max_level_error"] }
 flexi_logger = "*"
 petgraph = "*"
@@ -19,9 +15,10 @@ rand = "*"
 lazy_static = "*"
 tensorflow = "*"
 clap = "*"
+ctrlc = { version = "*", features = ["termination"] }
 
-[dependencies.gosgf]
-path = "gosgf"
+# [dependencies.gosgf]
+# path = "gosgf"
 
 [profile.release]
 lto = true

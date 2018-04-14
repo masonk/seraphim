@@ -126,11 +126,11 @@ impl State {
     fn place_and_check_winner(&mut self, idx: usize, player: usize) -> Result<(), MoveError> {
         self.place_unchecked(idx, player)?;
         if self.check_winner(idx, player) {
-            trace!("{} (Player {} won)\n", self, Self::to_mark(player));
+            // trace!("{} (Player {} won)\n", self, Self::to_mark(player));
             self.status = GameResult::LastPlayerWon;
             return Ok(());
         }
-        trace!("{} at {}\n{}\n", Self::to_mark(player), idx, self);
+        // trace!("{} at {}\n{}\n", Self::to_mark(player), idx, self);
         self.plys += 1;
         self.status = match self.plys {
             9 => GameResult::TerminatedWithoutResult,
@@ -249,7 +249,7 @@ impl DnnGameExpert {
             session: session,
         })
     }
-    pub fn save_model(graph: &tf::Graph, session: &mut tf::Session, model_filename: &str) -> Result<(), BoxError> {
+    fn save_model_(graph: &tf::Graph, session: &mut tf::Session, model_filename: &str) -> Result<(), BoxError> {
         let op_save = graph.operation_by_name_required("save/control_dependency")?;
         let op_file_path = graph.operation_by_name_required("save/Const")?;
         let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(model_filename));
@@ -262,6 +262,10 @@ impl DnnGameExpert {
         trace!("...success)");
         Ok(())
     }
+    pub fn save_model(&mut self, model_filename: &str) -> Result<(), BoxError> {
+        Self::save_model_(&self.graph, &mut self.session, model_filename)
+    }
+
 
     pub fn init_with_random_weights(graph_filename: &str, model_filename: &str) -> Result<Self, BoxError> {
         trace!("Attemping to loading graph from '{}'", graph_filename);
@@ -277,7 +281,7 @@ impl DnnGameExpert {
         session.run(&mut init_step)?;
         trace!("...successs.");
     
-        Self::save_model(&graph, &mut session, model_filename);
+        Self::save_model_(&graph, &mut session, model_filename);
         Self::from_saved_model(graph_filename, model_filename)
     }
 
@@ -317,7 +321,7 @@ impl DnnGameExpert {
         Ok(())
     }
 
-    pub fn train_and_save(&mut self, n: usize, model_filepath: &str) -> Result<(), BoxError> {
+    pub fn train(&mut self, n: usize) -> Result<(), BoxError> {
         trace!("Attemping to load training ops...");
         let op_x = self.graph.operation_by_name_required("x")?;
         let op_y_true = self.graph.operation_by_name_required("y_true")?;
@@ -338,7 +342,6 @@ impl DnnGameExpert {
             loop {
                 if let search::GameResult::InProgress = game.status {
                     let next = search.read_and_apply(self);
-                    game.play(next).unwrap();
 
                     // x is game state
                     // next goes into y_true for training
@@ -351,12 +354,12 @@ impl DnnGameExpert {
                     train_step.add_input(&op_y_true, 0, &y_true);
                     train_step.add_target(&op_train);
                     self.session.run(&mut train_step)?;
+                    game.play(next).unwrap();
                 } else {
                     break;
                 }
             }
         }
-        Self::save_model(&self.graph, &mut self.session, model_filepath)?;
 
         Ok(())
     }
@@ -368,7 +371,7 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
     // while waiting for their batch to accumulate.
     fn hypotheses(&mut self, state: &State) -> search::Hypotheses<usize> {
 
-        trace!("{}", state);
+        debug!("{}", state);
         let op_x = self.graph.operation_by_name_required("x").unwrap();
         let softmax = self.graph.operation_by_name_required("softmax").unwrap();
 
@@ -382,12 +385,12 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
             self.session.run(&mut inference_step).expect("failed to run inference step");
 
             let inferences : tf::Tensor<f32> = inference_step.take_output(softmax_output_token).unwrap();
-            trace!("raw inferences:");
+            debug!("raw inferences:");
             for i in 0..3 {
                 let o = i * 3;
-                trace!("{0: <w$.w$} | {1: <w$.w$} | {2: <w$.w$}", inferences[o], inferences[o+1], inferences[o+2], w=5);
+                debug!("{0: <w$.w$} | {1: <w$.w$} | {2: <w$.w$}", inferences[o], inferences[o+1], inferences[o+2], w=5);
             }
-            trace!("");
+            debug!("");
 
             let mut legal_probability = 0.0;
             for i in (0..9).into_iter() {

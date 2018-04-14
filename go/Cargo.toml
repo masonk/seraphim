@@ -1,14 +1,16 @@
 [package]
-name = "gosgf"
+name = "go"
 version = "0.1.0"
 authors = ["Mason Kramer <mason.kramer@gmail.com>"]
-description = "An SGF Parser for Rust. Supports FF[4]. (http://www.red-bean.com/sgf/sgf4.html)"
+description = "A go game and parser for Rust. Supports FF[4]. (http://www.red-bean.com/sgf/sgf4.html)"
 build = "build.rs" # LALRPOP preprocessing
 
 [dependencies]
 lalrpop-util = "0.14.0"
 regex = "0.2.0"
 lazy_static = "*"
+itertools = "*"
+serde = "*"
 
 [build-dependencies.lalrpop]
 version = "0.14.0"

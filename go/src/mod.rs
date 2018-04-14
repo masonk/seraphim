@@ -9,10 +9,10 @@ use vec_map::VecMap;
 use std::collections::HashMap;
 use std::collections::BTreeSet;
 use itertools::Itertools;
-use gosgf;
-use gosgf::Move as SgfMove;
-use gosgf::PointColor as SgfColor;
-use gosgf::Stone as SgfStone;
+use go::gosgf;
+use go::gosgf::Move as SgfMove;
+use go::gosgf::PointColor as SgfColor;
+use go::gosgf::Stone as SgfStone;
 use serde_json;
 
 #[repr(C)]

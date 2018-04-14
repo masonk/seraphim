@@ -1,7 +1,8 @@
+- top priority
+    - separate move generation and training - can run the two halfs asynchronously and on multiple hosts simultaneously.
+    - update seraphim::search to also return an improved to_win probability as well a total probability over all moves
+
 search:
-- update the algorithm to also produce an improved to_win probability    
-    - then update TTT to train that
-- separate move generation and training - can run the two halfs asynchronously and on multiple hosts simultaneously.
 - Dirichlet noise in the move selection function
 - Separate read_and_apply into read() -> Action and advance(a: Action) so that tree search can be used to play interactively with an opponent, rather than just games of self-play
     - discard untaken edges in the search tree when advancing down a node

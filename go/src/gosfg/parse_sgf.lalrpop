@@ -1,6 +1,6 @@
 
 use std::str::FromStr;
-use gosgf::*;
+use go::gosgf::*;
 use std::collections::HashMap;
 use regex;
 
