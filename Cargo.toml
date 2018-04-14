@@ -18,6 +18,7 @@ petgraph = "*"
 rand = "*"
 lazy_static = "*"
 tensorflow = "*"
+clap = "*"
 
 [dependencies.gosgf]
 path = "gosgf"

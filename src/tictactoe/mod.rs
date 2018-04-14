@@ -126,11 +126,11 @@ impl State {
     fn place_and_check_winner(&mut self, idx: usize, player: usize) -> Result<(), MoveError> {
         self.place_unchecked(idx, player)?;
         if self.check_winner(idx, player) {
-            trace!("Player {} won the game \n{}", player, idx);
+            trace!("{} (Player {} won)\n", self, Self::to_mark(player));
             self.status = GameResult::LastPlayerWon;
             return Ok(());
         }
-        trace!("{} at {}\n{}", Self::to_mark(player), idx, self);
+        trace!("{} at {}\n{}\n", Self::to_mark(player), idx, self);
         self.plys += 1;
         self.status = match self.plys {
             9 => GameResult::TerminatedWithoutResult,
@@ -182,10 +182,11 @@ impl fmt::Display for State {
         for i in 0..3 {
             let o = i * 3;
             f.write_str(&format!(
-                "|{}|{}|{}|\n",
+                "|{}|{}|{}|{}",
                 self.mark(o),
                 self.mark(o + 1),
-                self.mark(o + 2)
+                self.mark(o + 2),
+                if i < 2 { "\n" } else { "" },
             ))?;
         }
         f.write_str("")
@@ -295,6 +296,27 @@ impl DnnGameExpert {
         x
     }
 
+    pub fn play_one_game(&mut self) -> Result<(), BoxError> {
+        let mut options = search::SearchTreeOptions::defaults();
+        options.readouts = 1500;
+        options.tempering_point = 1;
+        options.cpuct = 0.1;
+
+        let initial_search_state = State::new();
+        let mut game = initial_search_state.clone();
+        let mut search = search::SearchTree::init_with_options(initial_search_state, options.clone());
+        loop {
+            if let search::GameResult::InProgress = game.status {
+                let next = search.read_and_apply(self);
+                game.play(next).unwrap();
+                debug!("Search chose {} \n{}", next, game);
+            } else {
+                break;
+            }
+        }
+        Ok(())
+    }
+
     pub fn train_and_save(&mut self, n: usize, model_filepath: &str) -> Result<(), BoxError> {
         trace!("Attemping to load training ops...");
         let op_x = self.graph.operation_by_name_required("x")?;
@@ -349,7 +371,6 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
         trace!("{}", state);
         let op_x = self.graph.operation_by_name_required("x").unwrap();
         let softmax = self.graph.operation_by_name_required("softmax").unwrap();
-        trace!("...success.");
 
         let state_tensor = Self::state_tensor(state);
         let mut legal_actions : Vec<(usize, f32)> = vec![];
@@ -366,6 +387,7 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
                 let o = i * 3;
                 trace!("{0: <w$.w$} | {1: <w$.w$} | {2: <w$.w$}", inferences[o], inferences[o+1], inferences[o+2], w=5);
             }
+            trace!("");
 
             let mut legal_probability = 0.0;
             for i in (0..9).into_iter() {
@@ -395,6 +417,7 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
                 let o = i * 3;
                 trace!("{0: <w$.w$} | {1: <w$.w$} | {2: <w$.w$}", trcinf[o], trcinf[o+1], trcinf[o+2], w = 3);
             }
+            trace!("");
         }
 
         search::Hypotheses {

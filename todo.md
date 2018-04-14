@@ -8,9 +8,9 @@ search:
 - Why does 200 readouts of TTT consistently underperform 100 readouts?
     - time cargo test expert::increasing_readouts -- --nocapture
     - Make sure the selected action is best from the PoV of the *current player*
-
 - (perf) Switch to a StableGraph for perf?
 - Multithread search?
+- batching inference requests
 
 ttt net:
 - summary metrics & checkpointing for Tensorboard
