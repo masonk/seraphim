@@ -19,7 +19,46 @@ struct ParseError {
     msg: String,
 }
 
+#[derive(Debug)]
+pub enum RootErrorCause {
+    Tf(tf::Status),
+    Io(::std::io::Error)
+}
+
+#[derive(Debug)]
+pub struct TicTacToeError {
+    pub msg: String,
+    pub root_error: RootErrorCause
+}
+
+impl From<tf::Status> for TicTacToeError {
+    fn from(e: tf::Status) -> TicTacToeError {
+        TicTacToeError {
+            msg: "Tensorflow returned an error.".to_string(),
+            root_error: RootErrorCause::Tf(e)
+        }
+    }
+}
+
+impl From<::std::io::Error> for TicTacToeError {
+    fn from(e: ::std::io::Error) -> TicTacToeError {
+        TicTacToeError {
+            msg: "IO error.".to_string(),
+            root_error: RootErrorCause::Io(e)
+        }
+    }
+}
+pub struct TrainOptions {
+
+}
+impl TrainOptions {
+    pub fn new() -> Self {
+        TrainOptions {}
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Copy, Hash)]
+#[repr(C)]
 pub struct State {
     pub board: [[bool; 9]; 2],
     pub next_player: usize,
@@ -175,7 +214,6 @@ impl State {
         }
         String::from(" ")
     }
-
 }
 impl fmt::Display for State {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -193,7 +231,6 @@ impl fmt::Display for State {
     }
 }
 
-type BoxError = Box<::std::error::Error>;
 
 #[derive(Debug)]
 pub struct DnnGameExpert {
@@ -202,9 +239,9 @@ pub struct DnnGameExpert {
     session: tf::Session,
 }
 impl DnnGameExpert {
-    fn load_graph(filename: &str) -> Result<tf::Graph, BoxError> {
+    fn load_graph(filename: &str) -> Result<tf::Graph, TicTacToeError> {
         if !Path::new(filename).exists() {
-            return Err(Box::new(
+            return Err(TicTacToeError::from(
                 tf::Status::new_set(
                     tf::Code::NotFound,
                     &format!(
@@ -224,7 +261,7 @@ impl DnnGameExpert {
         Ok(graph)
     }
 
-    pub fn from_saved_model(graph_filename: &str, model_filename: &str) -> Result<Self, BoxError> {
+    pub fn from_saved_model(graph_filename: &str, model_filename: &str) -> Result<Self, TicTacToeError> {
         trace!("Attemping to load graph from '{}'", graph_filename);
         let graph = Self::load_graph(graph_filename)?;
         trace!("...success.");
@@ -249,7 +286,7 @@ impl DnnGameExpert {
             session: session,
         })
     }
-    fn save_model_(graph: &tf::Graph, session: &mut tf::Session, model_filename: &str) -> Result<(), BoxError> {
+    fn save_model_(graph: &tf::Graph, session: &mut tf::Session, model_filename: &str) -> Result<(), TicTacToeError> {
         let op_save = graph.operation_by_name_required("save/control_dependency")?;
         let op_file_path = graph.operation_by_name_required("save/Const")?;
         let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(model_filename));
@@ -262,12 +299,12 @@ impl DnnGameExpert {
         trace!("...success)");
         Ok(())
     }
-    pub fn save_model(&mut self, model_filename: &str) -> Result<(), BoxError> {
+    pub fn save_model(&mut self, model_filename: &str) -> Result<(), TicTacToeError> {
         Self::save_model_(&self.graph, &mut self.session, model_filename)
     }
 
 
-    pub fn init_with_random_weights(graph_filename: &str, model_filename: &str) -> Result<Self, BoxError> {
+    pub fn init_with_random_weights(graph_filename: &str, model_filename: &str) -> Result<Self, TicTacToeError> {
         trace!("Attemping to loading graph from '{}'", graph_filename);
         let graph = Self::load_graph(graph_filename)?;
         trace!("...success");
@@ -285,43 +322,85 @@ impl DnnGameExpert {
         Self::from_saved_model(graph_filename, model_filename)
     }
 
-    fn state_tensor(state: &State) -> tf::Tensor<bool> {
+    fn state_tensor(state: &State) -> tf::Tensor<u8> {
         let mut x = tf::Tensor::new(&[1, 19]);
         for i in 0..2 {
             for j in 0..9 {
-                x[i * 9 + j] = state.board[i][j];
+                x[i * 9 + j] = state.board[i][j] as u8;
             }
         }
 
         x[18] = match state.next_player {
-            0 => false,
-            _ => true,
+            0 => 0,
+            _ => 1,
         };
         x
     }
 
-    pub fn play_one_game(&mut self) -> Result<(), BoxError> {
-        let mut options = search::SearchTreeOptions::defaults();
-        options.readouts = 1500;
-        options.tempering_point = 1;
-        options.cpuct = 0.1;
-
-        let initial_search_state = State::new();
-        let mut game = initial_search_state.clone();
-        let mut search = search::SearchTree::init_with_options(initial_search_state, options.clone());
+    pub fn play_one_game(&mut self, mut searcher: search::SearchTree<State, usize>) -> Result<State, TicTacToeError> {
+        let mut game = State::new();
         loop {
             if let search::GameResult::InProgress = game.status {
-                let next = search.read_and_apply(self);
+                let next = searcher.read_and_apply(self);
                 game.play(next).unwrap();
-                debug!("Search chose {} \n{}", next, game);
+                info!("Search chose {}@\n{}", next, game);
             } else {
                 break;
             }
         }
+        Ok(game)
+    }
+
+    pub fn play_and_record_one_game<W: ::std::io::Write>(&mut self, 
+        mut searcher: search::SearchTree<State, usize>, 
+        dest: &mut W) -> Result<State, TicTacToeError> {
+        let mut game = State::new();
+        loop {
+            let mut count = 0;
+            if let search::GameResult::InProgress = game.status {
+                let next = searcher.read_and_apply(self);
+                game.play(next).unwrap();
+                unsafe {
+                    let bytes = ::std::mem::transmute::<[[bool; 9]; 2], [u8; 18]>(game.board);
+                    dest.write(&bytes)?;
+                }
+                dest.write(&[game.next_player as u8])?;
+                let mut choice = [0u8; 9];
+                choice[next] = 1;
+                dest.write(&choice)?;
+            } else {
+                break;
+            }
+        }
+        Ok(game)
+    }
+
+    pub fn train_next_example<R: ::std::io::Read>(&mut self, 
+        options: TrainOptions, 
+        source: &mut R) -> Result<(), TicTacToeError> {
+        let mut state = tf::Tensor::new(&[1, 19]);
+        
+        source.read_exact(&mut state)?;
+        let mut choice_buf = [0; 9];
+        let mut choice = tf::Tensor::new(&[1, 9]);
+        source.read_exact(&mut choice_buf)?;
+        for i in 0..9 {
+            choice[i] = choice_buf[i] as f32;
+        }
+        
+        let op_x = self.graph.operation_by_name_required("x")?;
+        let op_y_true = self.graph.operation_by_name_required("y_true")?;
+        let op_train = self.graph.operation_by_name_required("train")?;
+        let mut train_step = tf::StepWithGraph::new();
+        train_step.add_input(&op_x, 0, &state);
+        train_step.add_input(&op_y_true, 0, &choice);
+        train_step.add_target(&op_train);
+        self.session.run(&mut train_step)?;
         Ok(())
     }
 
-    pub fn train(&mut self, n: usize) -> Result<(), BoxError> {
+    // synchronously play and train
+    pub fn train(&mut self, n: usize) -> Result<(), TicTacToeError> {
         trace!("Attemping to load training ops...");
         let op_x = self.graph.operation_by_name_required("x")?;
         let op_y_true = self.graph.operation_by_name_required("y_true")?;
@@ -331,7 +410,7 @@ impl DnnGameExpert {
         let mut options = search::SearchTreeOptions::defaults();
         options.readouts = 1500;
         options.tempering_point = 1;
-        options.cpuct = 0.1;
+        options.cpuct = 1.5;
         trace!("Beginning search & train with {:?}", options);
 
         for i in 0..n {
@@ -495,38 +574,53 @@ mod expert {
     use super::*;
 
     #[test]
-    fn stress_test() {
+    fn dnn_strength_test() {
         _setup_test();
         let mut draw = 0;
-        let n = 500;
+        let n = 1;
         for _ in 0..n {
-            let mut game_expert = DumbGameExpert::new();
-            let mut game = State::new();
-            let mut options = search::SearchTreeOptions::defaults();
-            options.readouts = 1000;
-            options.tempering_point = 1;
-            options.cpuct = 2.0;
-            let mut search = search::SearchTree::init_with_options(State::new(), options);
-            loop {
-                if let GameResult::InProgress = game.status {
-                    let next = search.read_and_apply(&mut game_expert);
-                    game.play(next).unwrap();
-                } else {
-                    if game.status == GameResult::TerminatedWithoutResult {
-                        draw += 1;
+            let graph_filename = "src/tictactoe/simple_net.pb";
+            let model_filename = "src/tictactoe/simple_model/";
+
+            let mut ge = match super::DnnGameExpert::from_saved_model(graph_filename, model_filename) {
+                Ok(ge) => {
+                    ge
+                },
+                Err(e) => {
+                    trace!("Could not open saved model at '{}'. Error: \n{:?}\nAttempting to initialize a new model with random weights.", model_filename, e);
+                    let res = super::DnnGameExpert::init_with_random_weights(graph_filename, model_filename);
+                    match res {
+                        Ok(ge) => {
+                            ge
+                        },
+                        Err(e) => panic!("Couldn't initialize a new model at '{}'. Error:\n{:?}", model_filename, e),
                     }
-                    break;
                 }
+            };
+            
+            let mut options = search::SearchTreeOptions::defaults();
+            options.readouts = 1500;
+            options.tempering_point = 2;
+            options.cpuct = 1.5;
+
+            let initial_search_state = State::new();
+            let searcher = search::SearchTree::init_with_options(initial_search_state, options.clone());
+
+            let game = ge.play_one_game(searcher).unwrap();
+            if game.status == GameResult::TerminatedWithoutResult {
+                draw += 1;
             }
         }
+
         println!("drew {} / {} games", draw, n);
         assert!(
-            (draw as f32) / (n as f32) > 0.95,
+            (draw as f32) / (n as f32) >= 1.0,
             "Most games should draw in a well-played game of Tic Tac Toe"
         );
     }
 
     #[test]
+    // #[ignore]
     fn increasing_readouts_improves_play() {
         _setup_test();
         let mut draws: Vec<usize> = Vec::new();

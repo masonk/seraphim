@@ -31,8 +31,7 @@ State is a state of the game. It will be created by apply()ing an Action to an e
 
 */
 pub trait GameExpert<State, Action>
-where
-    State: ::std::hash::Hash,
+where State: ::std::hash::Hash
 {
     // TODO: The AGZ paper minibatches the request for expert policies
     // into batches of 8 hypotheses. There should be a way of batching these requests
@@ -62,6 +61,7 @@ type EdgeIdx = petgraph::graph::EdgeIndex<petgraph::graph::DefaultIx>;
 struct Edge<Action>
 where
     Action: PartialEq + ::std::fmt::Debug,
+    
 {
     action: Action,     // The Action that this edge represents.
     prior: f32, // P(s, a). The prior probability of choosing this node, derived from the expert guess.
@@ -161,7 +161,7 @@ where
         The GameExpert should train itself to be more likely to pick the same value that the tree search picked.
         */
         for _ in 0..self.options.readouts {
-            self.read_one(self.root_idx, game_expert);
+            self.read_to_end(self.root_idx, game_expert);
         }
 
         let visits: Vec<(u32, EdgeIdx, NodeIdx)> = self.search_tree
@@ -190,7 +190,31 @@ where
                 }
             }
         } else {
-            // After 30 plys, find the move with the highest visit count
+            // After tempering, always chose the node with the highest visit count
+
+            if cfg!(debug_assertions) {
+                let idx = self.root_idx;
+
+                trace!("Nb = {}. {} actions.", total_visit_count, self.search_tree
+                    .neighbors(idx).count());
+
+                let parent = &self.search_tree[idx];
+
+                let possibilities = self.search_tree
+                    .neighbors(idx)
+                    .map(|node_idx| {
+                        let edge_idx = self.parent_edge_idx(node_idx).unwrap();
+
+                        let edge = &self.search_tree[edge_idx];
+                        (edge, game_expert.next(&parent.state, &edge.action))
+                    });
+
+                for p in possibilities {
+                    trace!("----- {:?} -----\n{}\np: {:.3}\nq: {:.2}\nN: {}\n----\n", p.0.action,  p.1, p.0.prior, p.0.average_value, p.0.visit_count);
+                }
+            }
+
+
             let (selected_edge, selected_node) = self.search_tree
                 .neighbors(self.root_idx)
                 .map(|child_idx| (self.parent_edge_idx(child_idx).unwrap(), child_idx))
@@ -200,6 +224,7 @@ where
             self.ply += 1;
             self.root_idx = selected_node;
             let edge = self.search_tree.remove_edge(selected_edge).unwrap();
+            trace!("Chose {:?}", edge.action);
             return edge.action;
         }
         panic!("Didn't select a next action.");
@@ -218,8 +243,8 @@ where
         // TODO: delete all nodes and edges that are not reachable from root
     }
     // recursively follow the search to a terminal node (A node where GameResult is not InProgress),
-    // then back up the tree, updating edge weights.
-    fn read_one(&mut self, node_idx: NodeIdx, game_expert: &mut GameExpert<State, Action>) {
+    // then back up the tree, updating edge weights.f
+    fn read_to_end(&mut self, node_idx: NodeIdx, game_expert: &mut GameExpert<State, Action>) {
         let self_ptr = self as *mut Self;
         unsafe {
             let node = (*self_ptr).search_tree.node_weight_mut(node_idx).unwrap();
@@ -231,7 +256,7 @@ where
                     }
                     let next_idx = self.select_next_node(node_idx, game_expert);
 
-                    return self.read_one(next_idx, game_expert);
+                    return self.read_to_end(next_idx, game_expert);
                 }
                 _ => {
                     match result {
@@ -261,6 +286,7 @@ where
             c is "a constant determining the level of exploration".
 
         */
+        
         let n_b: u32 = self.search_tree
             .neighbors(idx)
             .map(|child_idx| self.parent_edge_idx(child_idx).unwrap())
@@ -275,6 +301,40 @@ where
                 panic!();
             })
             .sum();
+
+        if cfg!(debug_assertions) {
+            if n_b == 1000 {
+                trace!("+++++++++ Debugging the choice for randomly chosen single move of a single readout ++++++++++++++");
+                let parent = &self.search_tree[idx];
+                trace!("For state\n{}:", parent.state);
+
+                let pucts = self.search_tree
+                .neighbors(idx)
+                .map(|node_idx| {
+                    let edge_idx = self.parent_edge_idx(node_idx).unwrap();
+
+                    let edge = &self.search_tree[edge_idx];
+                    let u = self.options.cpuct * edge.prior * f32::sqrt(n_b as f32) / ((1 + edge.visit_count) as f32);
+                    let q = edge.average_value;
+                    let uq = u + q;
+                    (edge, u, q, uq, game_expert.next(&parent.state, &edge.action))
+                });
+
+                for (e, u, q, uq, s) in pucts {
+                    trace!("----- {:?} -----\n{}\nu: {:.3}\nq: {:.3}\nu+q: {:.3}\np: {:.3}\nq: {:.3}\nN: {}\n----\n", 
+                    e.action,
+                    s,
+                    u, q, uq,
+                    e.prior,
+                    e.average_value,
+                    e.visit_count);
+                }
+
+                trace!("+++++++++++++++++++++++++++++++++++")
+            }
+        }
+
+
         let (next_edge_idx, _) = self.search_tree
             .neighbors(idx)
             .map(|node_idx| {
@@ -318,7 +378,7 @@ where
 
         let parent_idx = self.parent_node_idx(node_idx).unwrap();
 
-        self.backup(reward * -1.0, parent_idx);
+        self.backup(-1.0 * reward, parent_idx);
     }
     // Create an edge and a node for each possible move from this position
     fn expand(&mut self, node_idx: NodeIdx, game_expert: &mut GameExpert<State, Action>) {

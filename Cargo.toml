@@ -17,9 +17,6 @@ tensorflow = "*"
 clap = "*"
 ctrlc = { version = "*", features = ["termination"] }
 
-# [dependencies.gosgf]
-# path = "gosgf"
-
 [profile.release]
 lto = true
 
