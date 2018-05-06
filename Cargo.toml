@@ -2,6 +2,7 @@
 name = "seraphim"
 version = "0.1.0"
 authors = ["Mason Kramer <mason.kramer@gmail.com>"]
+build = "build.rs"
 
 [dependencies]
 left-pad = "1.0.0"
@@ -16,6 +17,7 @@ lazy_static = "*"
 tensorflow = "*"
 clap = "*"
 ctrlc = { version = "*", features = ["termination"] }
+protobuf = "*"
 
 [profile.release]
 lto = true
@@ -26,3 +28,8 @@ lto = true
 [profile.dev]
 opt-level = 2
 codegen-units = 4
+
+[build-dependencies]
+protoc-rust = "*"
+log = { version = "0.4", features = ["max_level_trace", "release_max_level_error"] }
+flexi_logger = "*"
