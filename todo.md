@@ -1,7 +1,8 @@
 - top priority
     - train in python
-        - save game data as TFRecords
-        - load games as DataSets
+        - implement TFRecordWriter 
+        - load games as tf.data.TFRecord (https://www.tensorflow.org/programmers_guide/datasets)
+            - after loading TFRecord, have to map Example to tensor
     - summary metrics & checkpointing for Tensorboard
         - How do I access the FileWriter from rust?
             - Let's just convert to python training

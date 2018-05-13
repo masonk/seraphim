@@ -6,6 +6,7 @@
 
 pub mod search;
 pub mod tictactoe;
+pub mod io;
 
 #[macro_use]
 extern crate lazy_static;

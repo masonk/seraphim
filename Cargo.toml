@@ -18,6 +18,8 @@ tensorflow = "*"
 clap = "*"
 ctrlc = { version = "*", features = ["termination"] }
 protobuf = "*"
+crc32c = "*"
+byteorder = "*"
 
 [profile.release]
 lto = true

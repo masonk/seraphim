@@ -1,6 +1,7 @@
 use flexi_logger;
 use search;
 use search::GameResult;
+use io;
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
@@ -9,6 +10,7 @@ use std::sync::{Once, ONCE_INIT};
 static _INIT: Once = ONCE_INIT;
 use tensorflow as tf;
 use protobuf;
+use protobuf::Message;
 use std::collections::HashMap;
 mod gen;
 
@@ -386,6 +388,7 @@ impl DnnGameExpert {
         mut searcher: search::SearchTree<State, usize>, 
         dest: &mut W) -> Result<State, TicTacToeError> {
         let mut game = State::new();
+        let mut writer = io::tf::RecordWriter::new(dest); 
         loop {
             let mut count = 0;
             if let search::GameResult::InProgress = game.status {
@@ -411,7 +414,9 @@ impl DnnGameExpert {
 
                 let mut example = gen::example::Example::new();
                 example.set_features(features);
-                println!("{:?}", example);
+                // println!("{:?}", example);
+                let proto_bytes = example.write_to_bytes().unwrap();
+                writer.write_one_record(&proto_bytes);
                 // unsafe {
                 //     let bytes = ::std::mem::transmute::<[[bool; 9]; 2], [u8; 18]>(game.board);
                 //     gen::example::
