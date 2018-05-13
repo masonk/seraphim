@@ -384,6 +384,15 @@ impl DnnGameExpert {
         feature.set_float_list(float_list);
         feature
     }
+    /*
+        features {
+            feature {
+                game: 
+                choice:
+            }
+        }
+
+    */
     pub fn play_and_record_one_game<W: ::std::io::Write>(&mut self, 
         mut searcher: search::SearchTree<State, usize>, 
         dest: &mut W) -> Result<State, TicTacToeError> {
