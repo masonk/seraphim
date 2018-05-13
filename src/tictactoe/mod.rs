@@ -12,8 +12,6 @@ use protobuf;
 use std::collections::HashMap;
 mod gen;
 
-use self::gen;
-
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub enum MoveError {
     Occupied,
@@ -357,23 +355,31 @@ impl DnnGameExpert {
     }
 
     fn game_to_feature(game: &State) -> gen::feature::Feature {
-        let mut vec = Vec::<u8>::with_capacity(19);
+        let mut vec = Vec::with_capacity(19);
         for i in 0..2 {
             for v in 0..9 {
                 vec.push(game.board[i][v] as u8);
             }
         }
         vec.push(game.next_player as u8);
-        let repeated_field = ::protobuf::RepeatedField<Vec<u8>>::from_vec(vec);
-        let bytes_list: gen::feature::BytesList = gen::feature::BytesList::new();
+
+        let mut repeated_field = ::protobuf::RepeatedField::<Vec<u8>>::new();
+        repeated_field.push(vec);
+
+        let mut bytes_list: gen::feature::BytesList = gen::feature::BytesList::new();
         bytes_list.set_value(repeated_field);
-        let feature = gen::feature::Feature::new();
+
+        let mut feature = gen::feature::Feature::new();
         feature.set_bytes_list(bytes_list);
         feature
     }
     fn move_to_feature(probs: Vec<f32>) -> gen::feature::Feature {
-        let feature = gen::feature::Feature::new();
-        feature.set_float_list(probs);
+
+        let mut float_list = gen::feature::FloatList::new();
+        float_list.set_value(probs);
+
+        let mut feature = gen::feature::Feature::new();
+        feature.set_float_list(float_list);
         feature
     }
     pub fn play_and_record_one_game<W: ::std::io::Write>(&mut self, 
@@ -385,8 +391,8 @@ impl DnnGameExpert {
             if let search::GameResult::InProgress = game.status {
                 let next = searcher.read_and_apply(self);
                 game.play(next).unwrap();
-                let state_feature = game_to_feature(&game);
-                let probs = Vec::<f32>::with_capacity(9);
+                let state_feature = Self::game_to_feature(&game);
+                let mut probs = Vec::<f32>::with_capacity(9);
                 for i in 0..9 {
                     if next == i {
                         probs.push(1.0);
@@ -395,12 +401,15 @@ impl DnnGameExpert {
                         probs.push(0.0);
                     }
                 }
-                let choice_feature = move_to_feature(probs);
-                let features_map = HashMap::new();
-                features_map.insert("game".to_string(), game_feature);
+                let mut choice_feature = Self::move_to_feature(probs);
+                let mut features_map = HashMap::new();
+                features_map.insert("game".to_string(), state_feature);
                 features_map.insert("choice".to_string(), choice_feature);
+
+                let mut features = gen::feature::Features::new();
                 features.set_feature(features_map);
-                let example = gen::example::Example::new();
+
+                let mut example = gen::example::Example::new();
                 example.set_features(features);
                 println!("{:?}", example);
                 // unsafe {

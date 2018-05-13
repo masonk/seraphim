@@ -1,2 +1,2 @@
-mod example;
-mod feature;
+pub mod example;
+pub mod feature;
