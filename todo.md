@@ -1,6 +1,6 @@
 - top priority
     - train in python
-        - implement TFRecordWriter 
+        - implement TFRecordWriter - why doesn't it like them? try to parse as Examples?
         - load games as tf.data.TFRecord (https://www.tensorflow.org/programmers_guide/datasets)
             - after loading TFRecord, have to map Example to tensor
     - summary metrics & checkpointing for Tensorboard
