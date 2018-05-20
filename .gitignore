@@ -1,8 +1,8 @@
-target
-data
-bin
-include
-lib
-share
-pip-selfcheck.json
-src/tictactoe/gamedata
+/target
+/data
+/bin
+/include
+/lib
+/share
+/pip-selfcheck.json
+/src/tictactoe/gamedata
