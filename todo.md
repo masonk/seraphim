@@ -2,9 +2,10 @@
     - contrib
         - TFExample package?
     - train in python
-        - implement TFRecordWriter - why doesn't it like them? try to parse as Examples?
-        - load games as tf.data.TFRecord (https://www.tensorflow.org/programmers_guide/datasets)
-            - after loading TFRecord, have to map Example to tensor
+        - Why is graph import failing?
+            "Attempting to use uninitialized value dense/kernel"
+            - Do I need to switch to saved model instead of saved graph?
+            - Does a saved model include a saved graph for the Rust part?
     - summary metrics & checkpointing for Tensorboard
         - How do I access the FileWriter from rust?
             - Let's just convert to python training

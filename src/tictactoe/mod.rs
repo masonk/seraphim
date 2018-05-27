@@ -437,8 +437,6 @@ impl DnnGameExpert {
                 // choice[next] = 1;
                 // dest.write(&choice)?;
                 game.play(next).unwrap();
-
-                break;
             } else {
                 break;
             }

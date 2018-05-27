@@ -84,7 +84,6 @@ fn main() {
             record.flush();
             println!("{} games played, flushing", count);
         }
-        break;
     }
 
     println!("saved {} games", count);

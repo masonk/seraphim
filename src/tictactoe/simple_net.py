@@ -16,11 +16,11 @@ print(os.path.join(outdir, outfile))
 # The first plane holds the location of the first player's stones,
 # The second plane, the second player's.
 # A 19th byte holds 0 for first player, 1 for second player.
-x = tf.placeholder(tf.uint8, shape=[1, 9 * 2 + 1], name ='x')
+x = tf.placeholder(tf.uint8, shape=[None, 9 * 2 + 1], name ='x')
 
 # Training makes makes the net more likely to pick the picked move.
 # The picked move will be 1.0, the other 8 spaces will be 0.0.
-y_true = tf.placeholder(tf.float32, shape=[1, 9], name='y_true')
+y_true = tf.placeholder(tf.float32, shape=[None, 9], name='y_true')
 
 dense = tf.layers.dense(tf.cast(x, tf.float32), units=64, activation=tf.nn.relu)
 logits = tf.layers.dense(dense, units=9, activation=tf.nn.relu)
