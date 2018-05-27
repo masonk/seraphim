@@ -403,7 +403,6 @@ impl DnnGameExpert {
             let mut count = 0;
             if let search::GameResult::InProgress = game.status {
                 let next = searcher.read_and_apply(self);
-                game.play(next).unwrap();
                 let state_feature = Self::game_to_feature(&game);
                 let mut probs = Vec::<f32>::with_capacity(9);
                 for i in 0..9 {
@@ -437,6 +436,8 @@ impl DnnGameExpert {
                 // let mut choice = [0u8; 9];
                 // choice[next] = 1;
                 // dest.write(&choice)?;
+                game.play(next).unwrap();
+
                 break;
             } else {
                 break;
