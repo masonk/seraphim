@@ -4,7 +4,7 @@ use search::GameResult;
 use io;
 use std::fmt;
 use std::fs::File;
-use std::io::Read;
+use std::io::prelude::*;
 use std::path::Path;
 use std::sync::{Once, ONCE_INIT};
 static _INIT: Once = ONCE_INIT;
@@ -398,6 +398,7 @@ impl DnnGameExpert {
         dest: &mut W) -> Result<State, TicTacToeError> {
         let mut game = State::new();
         let mut writer = io::tf::RecordWriter::new(dest); 
+        let mut f = File::create("examples.pb").unwrap();
         loop {
             let mut count = 0;
             if let search::GameResult::InProgress = game.status {
@@ -426,6 +427,7 @@ impl DnnGameExpert {
                 // println!("{:?}", example);
                 let proto_bytes = example.write_to_bytes().unwrap();
                 writer.write_one_record(&proto_bytes);
+                f.write(&proto_bytes);
                 // unsafe {
                 //     let bytes = ::std::mem::transmute::<[[bool; 9]; 2], [u8; 18]>(game.board);
                 //     gen::example::
@@ -435,6 +437,7 @@ impl DnnGameExpert {
                 // let mut choice = [0u8; 9];
                 // choice[next] = 1;
                 // dest.write(&choice)?;
+                break;
             } else {
                 break;
             }

@@ -1,10 +1,11 @@
 import tensorflow as tf
 import glob
 
-def _parse_function(example_proto):
+def _parse_function(bytes):
+  
   features = {"game": tf.FixedLenFeature((), tf.int64),
               "choice": tf.FixedLenFeature((), tf.float32)}
-  parsed_features = tf.parse_single_example(example_proto, features)
+  parsed_features = tf.parse_single_example(bytes, features)
   return parsed_features["game"], parsed_features["choice"]
 
 num_epochs = 10

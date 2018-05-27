@@ -1,7 +1,6 @@
 - top priority
     - contrib
-        - move TFRecordWriter to src/io.rs in the tensorflow::io namespace of the tensorflow crate
-        - unit test TFRecordWriter
+        - TFExample package?
     - train in python
         - implement TFRecordWriter - why doesn't it like them? try to parse as Examples?
         - load games as tf.data.TFRecord (https://www.tensorflow.org/programmers_guide/datasets)
