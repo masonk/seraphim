@@ -62,7 +62,7 @@ fn main() {
     let game_file = ::std::fs::OpenOptions::new()
         .append(true)
         .create(true)   
-        .open("src/tictactoe/gamedata/game1")
+        .open("src/tictactoe/gamedata/game1.tfrecord")
         .unwrap();
     let mut record = ::std::io::BufWriter::new(game_file);
     let mut options = search::SearchTreeOptions::defaults();

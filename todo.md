@@ -1,19 +1,11 @@
 - top priority
-    - contrib
-        - TFExample package?
-    - train in python
-        - Why is graph import failing?
-            "Attempting to use uninitialized value dense/kernel"
-            - Do I need to switch to saved model instead of saved graph?
-            - Does a saved model include a saved graph for the Rust part?
+
+    - save and restore saved model from Python and from Rust
     - summary metrics & checkpointing for Tensorboard
-        - How do I access the FileWriter from rust?
-            - Let's just convert to python training
-            - can I dump the model proto and see what it's named the variables?
     - don't train '1' for the chosen move and '0' everywhere else, train search's prob distribution
         - after doing this, easy to add cross-entropy, equal weight to mse
     - L2 regularization 10e-4
-    - momentum = .9
+    - Adam optimizer
     - loss = mse + cross_entropy + l2 regularization
     - minibatching + batch normalization
         - AZ paper used minibatches of 2048, this should be driven by the available hardware
@@ -29,7 +21,8 @@
         - No regularization is probably screwing things up.
         - batching will add some regularization.
         - need many more training epochs?
-
+contrib
+    - TFExample package
 search:
 - implement a model evaluator
 - optional dirichlet noise in the move selection function

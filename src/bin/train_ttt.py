@@ -1,6 +1,21 @@
 import tensorflow as tf
 import glob
 
+
+num_epochs = 100
+minibatch_size = 128
+dataset_dir = "src/tictactoe/gamedata"
+
+def make_dataset(num_epochs, minibatch_size, dataset_dir):
+    files = glob.glob("{}/*.tfrecord".format(dataset_dir))
+    print("loading", files)
+    dataset = tf.data.TFRecordDataset(files)
+    dataset = dataset.repeat(num_epochs)
+    dataset = dataset.map(parse)
+    dataset = dataset.shuffle(buffer_size=100000)
+    dataset = dataset.batch(minibatch_size)
+    print("loaded data")
+    return dataset
 def parse(bytes):
   
   features = {"game": tf.FixedLenFeature((), tf.string),
@@ -10,15 +25,7 @@ def parse(bytes):
   choice =  parsed_features["choice"]
   return tf.reshape(game, [19]), tf.reshape(choice, [9])
 
-num_epochs = 1
-dataset_dir = "src/tictactoe/gamedata"
-files = glob.glob("{}/*".format(dataset_dir))
-print("loading", files)
-dataset = tf.data.TFRecordDataset(files)
-dataset = dataset.map(parse)
-dataset = dataset.shuffle(buffer_size=100000)
-dataset = dataset.batch(32)
-print("loaded data")
+dataset = make_dataset(num_epochs, minibatch_size, dataset_dir)
 
 graph_filename = "src/tictactoe/simple_net.pb"
 print("loading graph at '{}'".format(graph_filename))
@@ -46,10 +53,9 @@ with tf.Session() as sess:
     # print(dataset.output_types) 
     # print(dataset.output_shapes)
 
+    sess.run(iterator.initializer)
     while True:
-        for _ in range(num_epochs):
-            sess.run(iterator.initializer)
-            try:
-                sess.run(train)
-            except tf.errors.OutOfRangeError:
-                break
+        try:
+            sess.run(train)
+        except tf.errors.OutOfRangeError:
+            break

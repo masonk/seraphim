@@ -33,7 +33,7 @@ sess.run(init)
 loss = tf.losses.mean_squared_error(labels=y_true, predictions=softmax)
 optimizer = tf.train.GradientDescentOptimizer(.01)
 train = optimizer.minimize(loss, name='train')
-saver = tf.train.Saver(tf.global_variables())
+tf.train.Saver(tf.global_variables(), name="saver")
 
 definition = tf.Session().graph_def
 tf.train.write_graph(definition, outdir, outfile, as_text=False)
