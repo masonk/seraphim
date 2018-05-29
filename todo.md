@@ -1,9 +1,12 @@
 - top priority
-
     - save and restore saved model from Python and from Rust
     - summary metrics & checkpointing for Tensorboard
     - don't train '1' for the chosen move and '0' everywhere else, train search's prob distribution
         - after doing this, easy to add cross-entropy, equal weight to mse
+    - new game record every 500,000 games
+        - prefix the tfrecord with the number of training examples in the file to make rotations possible
+        - make a seraphim::io::RecordWriter that writes this prefix for you
+        
     - L2 regularization 10e-4
     - Adam optimizer
     - loss = mse + cross_entropy + l2 regularization

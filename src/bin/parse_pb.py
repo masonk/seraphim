@@ -7,6 +7,7 @@ def parse(bytes):
   parsed_features = tf.parse_single_example(bytes, features)
   return tf.decode_raw(parsed_features["game"], tf.uint8), parsed_features["choice"]
 
+records = tf.data.TFRecordDataset()
 with tf.Session() as sess:
     with  open("examples.pb", "rb") as f:  
         data = f.read(87)

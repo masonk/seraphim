@@ -427,15 +427,6 @@ impl DnnGameExpert {
                 let proto_bytes = example.write_to_bytes().unwrap();
                 writer.write_one_record(&proto_bytes);
                 f.write(&proto_bytes);
-                // unsafe {
-                //     let bytes = ::std::mem::transmute::<[[bool; 9]; 2], [u8; 18]>(game.board);
-                //     gen::example::
-                //     dest.write(&bytes)?;
-                // }
-                // dest.write(&[game.next_player as u8])?;
-                // let mut choice = [0u8; 9];
-                // choice[next] = 1;
-                // dest.write(&choice)?;
                 game.play(next).unwrap();
             } else {
                 break;

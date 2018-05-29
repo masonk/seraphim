@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::error::Error;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::io;
 use std::path::Path;
 use std::process::exit;
 use std::result::Result;
@@ -58,35 +59,70 @@ fn main() {
     };
 
     let mut count = 0;
-    let batch = 1000;
-    let game_file = ::std::fs::OpenOptions::new()
-        .append(true)
-        .create(true)   
-        .open("src/tictactoe/gamedata/game1.tfrecord")
-        .unwrap();
-    let mut record = ::std::io::BufWriter::new(game_file);
-    let mut options = search::SearchTreeOptions::defaults();
-    options.readouts = 1500;
-    options.tempering_point = 2;
-    options.cpuct = 1.5;
 
     'outer: while running.load(Ordering::SeqCst) {
-        let initial_search_state = seraphim::tictactoe::State::new();
-        let searcher = search::SearchTree::init_with_options(initial_search_state, options.clone());
+        let (space, file) = get_writer().unwrap();
+        let mut writer = ::std::io::BufWriter::new(file);
         ::std::fs::create_dir("src/tictactoe/gamedata");
+        println!("{}", space);
 
-        let res = ge.play_and_record_one_game(searcher, &mut record);
-        if let Err(e) = res {
-            error!("Error while playing:\n{:?}", e);
-        }
-        count += 1;
-        if count % batch == 0 {
-            record.flush();
-            println!("{} games played, flushing", count);
+        match do_some_games(&mut ge, space, writer, running.clone()) {
+            Ok(c) => count += c,
+            Err(err) => {
+                println!("{:?}", err);
+                break;
+            }
         }
     }
 
     println!("saved {} games", count);
 }
 
-// fn main() {}
+fn do_some_games<W: Write>(
+    ge: &mut seraphim::tictactoe::DnnGameExpert, 
+    num: i64, 
+    mut writer:  W,
+    running: Arc::<AtomicBool>) -> Result<i64, io::Error> {
+        
+    let mut count = 0;
+    let mut options = search::SearchTreeOptions::defaults();
+    options.readouts = 1500;
+    options.tempering_point = 2;
+    options.cpuct = 1.5;
+
+    while count < num {
+        if !running.load(Ordering::SeqCst) {
+            break;
+        }
+        let initial_search_state = seraphim::tictactoe::State::new();
+        let searcher = search::SearchTree::init_with_options(initial_search_state, options.clone());
+
+        let res = ge.play_and_record_one_game(searcher, &mut writer);
+        if let Err(err) = res {
+            error!("Error while playing a game: {:?}", err);
+            return Ok((count));
+        }
+        
+        count += 1;
+        if count % 1000 == 0 {
+
+            writer.flush();
+            println!("{} games played, flushing", count);
+        }
+    }
+    Ok((count))
+}
+
+fn get_writer() -> Result<(i64, ::std::fs::File), io::Error> {
+    let (space, filename) = seraphim::io::get_current_data_filename("src/tictactoe/gamedata", "ttt", 500_000)?;
+
+    let file = ::std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)   
+        .open(filename)
+        .unwrap();
+
+    Ok((space, file))
+}
+
+
