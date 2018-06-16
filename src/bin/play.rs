@@ -32,8 +32,8 @@ fn main() {
     
     init_logger();
 
-    let graph_filename = "src/tictactoe/simple_net.pb";
-    let model_filename = "src/tictactoe/simple_model/";
+    let graph_filename = "src/tictactoe/saved_models/graph_01.pb";
+    let model_filename = "src/tictactoe/saved_models/";
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();

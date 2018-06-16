@@ -1,5 +1,7 @@
 - top priority
-    - save and restore saved model from Python and from Rust
+    - save and restore saved model Rust
+        - from "metagraph"
+    - allowing training and play to progress asynchronously with periodic updating of inference parameters
     - summary metrics & checkpointing for Tensorboard
     - don't train '1' for the chosen move and '0' everywhere else, train search's prob distribution
         - after doing this, easy to add cross-entropy, equal weight to mse

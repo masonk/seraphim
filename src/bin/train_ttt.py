@@ -1,11 +1,15 @@
 import tensorflow as tf
 import glob
 
+
+
+parser = argparse.ArgumentParser(description='Load and train a TicTacToe expert model.')
+parser.add_argument('name', metavar='foo-model', help='Model prefix')
+args = parser.parse_args()
+
 num_epochs = 100
 minibatch_size = 128
-dataset_dir = "src/tictactoe/gamedata"
-model_dir = "src/tictactoe/simple_model/checkpoint"
-graph_filename = "src/tictactoe/simple_net.pb"
+checkpoint = "src/tictactoe/saved_models/" + args.name + "/checkpoint"
 
 def make_dataset(minibatch_size, dataset_dir):
     files = glob.glob("{}/*.tfrecord".format(dataset_dir))
@@ -25,40 +29,10 @@ def parse(bytes):
   choice =  parsed_features["choice"]
   return tf.reshape(game, [19]), tf.reshape(choice, [9])
 
-
-with tf.gfile.FastGFile(graph_filename,'rb') as f:
-    sess = tf.InteractiveSession()
-
-    dataset = make_dataset(minibatch_size, dataset_dir)
-    print("loading graph at '{}'".format(graph_filename))
-
-    iterator = dataset.make_initializable_iterator()
-    example, label = iterator.get_next()
-    graph_def = tf.GraphDef()
-    graph_def.ParseFromString(f.read())
-    tf.import_graph_def(graph_def, name='',input_map={'x': example, 'y_true':label})
-
-    init = tf.group(
-        tf.global_variables_initializer(), 
-        tf.local_variables_initializer(), 
-        iterator.initializer, 
-        sess.graph.get_operation_by_name('init'))
-
-    train = sess.graph.get_operation_by_name('train')
-    # for name in [n.name for n in tf.get_default_graph().as_graph_def().node]:
-    #     print(name)
-    
-    saver = tf.train.Saver()
-
-    sess.run(init)
-
-    for i in range(num_epochs):
-        sess.run(iterator.initializer)
-        
-        while True:
-            try:
-                sess.run(train)
-            except tf.errors.OutOfRangeError:
-                break
-        save_path = saver.save(sess, model_dir)
-        print("Model saved in path: %s" % save_path)
+with tf.Session() as sess:
+  # Restore variables from disk.
+  saver.restore(sess, checkpoint)
+  print("Model restored.")
+  # Check the values of the variables
+  print("v1 : %s" % v1.eval())
+  print("v2 : %s" % v2.eval())

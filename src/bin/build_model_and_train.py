@@ -7,13 +7,14 @@ import os
 import tensorflow as tf
 import glob
 
-outdir = os.path.dirname(__file__)
-outfile = Path(__file__).stem + ".pb"
 num_epochs = 100
 minibatch_size = 128
 dataset_dir = "src/tictactoe/gamedata"
-model_dir = "src/tictactoe/saved_models/01"
-graph_filename = "src/tictactoe/simple_net.pb"
+
+model_id = "01"
+model_dir = "src/tictactoe/saved_models"
+saver_prefix = model_dir + "/model_{}".format(model_id)
+graph_filename = "{}_graph.pb".format(saver_prefix)
 
 def make_dataset(minibatch_size, dataset_dir):
     files = glob.glob("{}/*.tfrecord".format(dataset_dir))
@@ -33,8 +34,6 @@ def parse(bytes):
   choice =  parsed_features["choice"]
   return tf.reshape(game, [19]), tf.reshape(choice, [9])
 
-print(os.path.join(outdir, outfile))
-
 dataset = make_dataset(minibatch_size, dataset_dir)
 iterator = dataset.make_initializable_iterator()
 example, label = iterator.get_next()
@@ -49,8 +48,6 @@ init = tf.group(
         tf.local_variables_initializer(), 
         iterator.initializer)
 
-print("loading graph at '{}'".format(graph_filename))
-
 loss = tf.losses.mean_squared_error(labels=label, predictions=softmax)
 optimizer = tf.train.GradientDescentOptimizer(.01)
 train = optimizer.minimize(loss, name='train')
@@ -58,7 +55,7 @@ train = optimizer.minimize(loss, name='train')
 saver = tf.train.Saver(None, name="saver")
 
 definition = tf.Session().graph_def
-tf.train.write_graph(definition, outdir, outfile, as_text=False)
+tf.train.write_graph(definition, model_dir, "graph_{}.pb".format(model_id), as_text=False)
 
 sess.run(init)
 
@@ -70,5 +67,5 @@ for i in range(num_epochs):
             sess.run(train)
         except tf.errors.OutOfRangeError:
             break
-    save_path = saver.save(sess, model_dir)
+    save_path = saver.save(sess, saver_prefix)
     print("Model saved in path: %s" % save_path)

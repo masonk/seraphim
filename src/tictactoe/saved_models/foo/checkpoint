@@ -1,0 +1,2 @@
+model_checkpoint_path: "foo-0"
+all_model_checkpoint_paths: "foo-0"
