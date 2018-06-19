@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -6,6 +8,7 @@ from pathlib import Path
 import argparse
 import glob
 import os
+import signal
 import tensorflow as tf
 
 parser = argparse.ArgumentParser(description='Initialize a TicTacToe expert model.')
@@ -37,6 +40,20 @@ def parse(bytes):
   choice =  parsed_features["choice"]
   return tf.reshape(game, [19]), tf.reshape(choice, [9])
 
+
+class catch_sigint(object):
+    def __init__(self):
+        self.caught_sigint = False
+    def note_sigint(self, signum, frame):
+        self.caught_sigint = True
+    def __enter__(self):
+        self.oldsigint = signal.signal(signal.SIGINT, self.note_sigint)
+        return self
+    def __exit__(self, *args):
+        signal.signal(signal.SIGINT, self.oldsigint)
+    def __call__(self):
+        return self.caught_sigint
+
 with tf.Session() as sess:
     dataset = make_dataset(minibatch_size, dataset_dir)
     iterator = dataset.make_initializable_iterator()
@@ -52,17 +69,19 @@ with tf.Session() as sess:
     train_op = tf.get_collection('train_op')[0]
     init = tf.get_collection('init')[0]
     global_step = tf.get_collection('global_step')[0]
-    
+
     # for v in [n.name for n in tf.get_default_graph().as_graph_def().node]:
     #     print(v)
     # print("before train loop", sess.run(tf.report_uninitialized_variables()))
-
-    for i in range(num_epochs):
-        sess.run(iterator.initializer)
-        while True:
-            try:
-                sess.run(train_op, feed_dict={iterator_handle: training_handle})
-            except tf.errors.OutOfRangeError:
-                break
-            print(saver.save(sess, saver_prefix, global_step))
+    with catch_sigint() as got_sigint:
+        for i in range(num_epochs):
+            sess.run(iterator.initializer)
+            while True:
+                if got_sigint():
+                    break
+                try:
+                    sess.run(train_op, feed_dict={iterator_handle: training_handle})
+                except tf.errors.OutOfRangeError:
+                    break
+                print(saver.save(sess, saver_prefix, global_step))
 
