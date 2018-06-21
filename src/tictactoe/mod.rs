@@ -266,65 +266,23 @@ impl DnnGameExpert {
         Ok(graph)
     }
 
-    pub fn from_saved_model(graph_filename: &str, model_filename: &str) -> Result<Self, TicTacToeError> {
-        trace!("Attemping to load graph from '{}'", graph_filename);
-        let graph = Self::load_graph(graph_filename)?;
-        trace!("...success.");
+    pub fn from_saved_model(model_filename: &str) -> Result<Self, TicTacToeError> {
+        trace!("Attemping to load saved model from '{}'", model_filename);
 
-        let mut session = tf::Session::new(&tf::SessionOptions::new(), &graph)?;
-        let op_load = graph.operation_by_name_required("save/restore_all")?;
-        let op_file_path = graph.operation_by_name_required("save/Const")?;
-        let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(model_filename));
-        
-        {
-            let mut step = tf::StepWithGraph::new();
-            step.add_input(&op_file_path, 0, &file_path_tensor);
-            step.add_target(&op_load);
-            trace!("Attemping to load model from '{}' ...", model_filename);
-            session.run(&mut step)?;
-            trace!("...success.");
-        }
+        let mut graph = tf::Graph::new();
+
+        let tags : [&str; 0] = [];
+        let mut session = tf::Session::from_saved_model(&tf::SessionOptions::new(),
+                                                &["serve", "train"],
+                                                &mut graph,
+                                                model_filename)?;
+        trace!("...success.");
 
         Ok(DnnGameExpert {
             root_state: self::State::new(),
             graph: graph,
             session: session,
         })
-    }
-    fn save_model_(graph: &tf::Graph, session: &mut tf::Session, model_filename: &str) -> Result<(), TicTacToeError> {
-        let op_save = graph.operation_by_name_required("save/control_dependency")?;
-        let op_file_path = graph.operation_by_name_required("save/Const")?;
-        let file_path_tensor: tf::Tensor<String> = tf::Tensor::from(String::from(model_filename));
-        let mut saver_step = tf::StepWithGraph::new();
-        saver_step.add_input(&op_file_path, 0, &file_path_tensor);
-        saver_step.add_target(&op_save);
-
-        trace!("Attemping to save model to '{}'", model_filename);
-        session.run(&mut saver_step)?;
-        trace!("...success)");
-        Ok(())
-    }
-    pub fn save_model(&mut self, model_filename: &str) -> Result<(), TicTacToeError> {
-        Self::save_model_(&self.graph, &mut self.session, model_filename)
-    }
-
-
-    pub fn init_with_random_weights(graph_filename: &str, model_filename: &str) -> Result<Self, TicTacToeError> {
-        trace!("Attemping to loading graph from '{}'", graph_filename);
-        let graph = Self::load_graph(graph_filename)?;
-        trace!("...success");
-
-        let mut session = tf::Session::new(&tf::SessionOptions::new(), &graph)?;
-        let op_init = graph.operation_by_name_required("init")?;
-        let mut init_step = tf::StepWithGraph::new();
-        init_step.add_target(&op_init);
-
-        trace!("Attemping to initialize a new model at '{}'", model_filename);
-        session.run(&mut init_step)?;
-        trace!("...successs.");
-    
-        Self::save_model_(&graph, &mut session, model_filename);
-        Self::from_saved_model(graph_filename, model_filename)
     }
 
     fn state_tensor(state: &State) -> tf::Tensor<u8> {
@@ -384,21 +342,12 @@ impl DnnGameExpert {
         feature.set_float_list(float_list);
         feature
     }
-    /*
-        features {
-            feature {
-                game: 
-                choice:
-            }
-        }
 
-    */
     pub fn play_and_record_one_game<W: ::std::io::Write>(&mut self, 
         mut searcher: search::SearchTree<State, usize>, 
         dest: &mut W) -> Result<State, TicTacToeError> {
         let mut game = State::new();
         let mut writer = io::tf::RecordWriter::new(dest); 
-        let mut f = File::create("examples.pb").unwrap();
         loop {
             let mut count = 0;
             if let search::GameResult::InProgress = game.status {
@@ -426,7 +375,6 @@ impl DnnGameExpert {
                 // println!("{:?}", example);
                 let proto_bytes = example.write_to_bytes().unwrap();
                 writer.write_one_record(&proto_bytes);
-                f.write(&proto_bytes);
                 game.play(next).unwrap();
             } else {
                 break;
@@ -448,8 +396,8 @@ impl DnnGameExpert {
             choice[i] = choice_buf[i] as f32;
         }
         
-        let op_x = self.graph.operation_by_name_required("x")?;
-        let op_y_true = self.graph.operation_by_name_required("y_true")?;
+        let op_x = self.graph.operation_by_name_required("example")?;
+        let op_y_true = self.graph.operation_by_name_required("label")?;
         let op_train = self.graph.operation_by_name_required("train")?;
         let mut train_step = tf::StepWithGraph::new();
         train_step.add_input(&op_x, 0, &state);
@@ -462,8 +410,8 @@ impl DnnGameExpert {
     // synchronously play and train
     pub fn train(&mut self, n: usize) -> Result<(), TicTacToeError> {
         trace!("Attemping to load training ops...");
-        let op_x = self.graph.operation_by_name_required("x")?;
-        let op_y_true = self.graph.operation_by_name_required("y_true")?;
+        let op_x = self.graph.operation_by_name_required("example")?;
+        let op_y_true = self.graph.operation_by_name_required("label")?;
         let op_train = self.graph.operation_by_name_required("train")?;
         trace!("..succcess.");
 
@@ -511,14 +459,14 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
     fn hypotheses(&mut self, state: &State) -> search::Hypotheses<usize> {
 
         debug!("{}", state);
-        let op_x = self.graph.operation_by_name_required("x").unwrap();
+        let example = self.graph.operation_by_name_required("example").unwrap();
         let softmax = self.graph.operation_by_name_required("softmax").unwrap();
 
         let state_tensor = Self::state_tensor(state);
         let mut legal_actions : Vec<(usize, f32)> = vec![];
         {
-            let mut inference_step = tf::StepWithGraph::new();
-            inference_step.add_input(&op_x, 0, &state_tensor);
+            let mut inference_step = tf::SessionRunArgs::new();
+            inference_step.add_feed(&example, 0, &state_tensor);
             let softmax_output_token = inference_step.request_output(&softmax, 0);
 
             self.session.run(&mut inference_step).expect("failed to run inference step");
@@ -639,10 +587,9 @@ mod expert {
         let mut draw = 0;
         let n = 1;
         for _ in 0..n {
-            let graph_filename = "src/tictactoe/simple_net.pb";
-            let model_filename = "src/tictactoe/simple_model/";
+            let model_filename = "src/tictactoe/simple_model/test_model";
 
-            let mut ge = match super::DnnGameExpert::from_saved_model(graph_filename, model_filename) {
+            let mut ge = match super::DnnGameExpert::from_saved_model(model_filename) {
                 Ok(ge) => {
                     ge
                 },

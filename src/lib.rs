@@ -22,3 +22,4 @@ extern crate petgraph;
 extern crate rand;
 extern crate protobuf;
 extern crate tensorflow;
+extern crate clap;

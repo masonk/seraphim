@@ -1,5 +1,4 @@
 - top priority
-    - clean up properly when ctrl-c train.py
     - prove that I can do inference in rust from the metagraph
     - summary metrics & checkpointing for Tensorboard
     - don't train '1' for the chosen move and '0' everywhere else, train search's prob distribution
