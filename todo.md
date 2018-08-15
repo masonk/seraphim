@@ -1,11 +1,13 @@
 - top priority
-    - prove that I can do inference in rust from the metagraph
+    - collect self-play game data into manageable records
+        - want to easily select the most recent n games for training
+        - delete older games automatically
+    - periodically load the most recent champion from training
+
     - summary metrics & checkpointing for Tensorboard
     - don't train '1' for the chosen move and '0' everywhere else, train search's prob distribution
         - after doing this, easy to add cross-entropy, equal weight to mse
-    - new game record every 500,000 games
-        - prefix the tfrecord with the number of training examples in the file to make rotations possible
-        - make a seraphim::io::RecordWriter that writes this prefix for you
+
         
     - L2 regularization 10e-4
     - Adam optimizer
