@@ -9,6 +9,7 @@ import argparse
 import datetime
 import glob
 import os
+import shutil
 import signal
 import tensorflow as tf
 
@@ -67,7 +68,7 @@ model_dir = "src/tictactoe/models/" + args.name + "/"
 
 # save a new SavedModel to compete in the eternal tournament after running through this many epochs of training
 snapshot_epochs = 1
-minibatch_size = 128
+minibatch_size = 32
 
 # take training examples (stored in TFRecord format) from files in this directory:
 dataset_dir = "src/tictactoe/gamedata"
@@ -117,7 +118,7 @@ def save_savedmodel(sess, dir):
     example = tf.get_collection("example")[0]
     label = tf.get_collection("label")[0]
     softmax = tf.get_collection('softmax')[0]
-
+    shutil.rmtree(dir, ignore_errors=True)
     builder = tf.saved_model.builder.SavedModelBuilder(dir)
     training_inputs = {
         "example": build_tensor_info(example),
@@ -173,7 +174,7 @@ def train(sess):
             dataset = make_dataset(minibatch_size, dataset_dir)
             iterator = dataset.make_initializable_iterator()
             example_it, label_it = iterator.get_next()
-
+            minibatch = 0
             for i in range(snapshot_epochs):
                 sess.run(iterator.initializer)
                 example_handle = sess.run(tf.get_session_handle(example_it))
@@ -185,11 +186,14 @@ def train(sess):
                     try:
                         sess.run(train_op, feed_dict={example_ph: example_handle, label_ph: label_handle})
                     except tf.errors.OutOfRangeError:
+                        print("EPOCH {} FINISHED. ({} minibatches of {} examples)".format(i, minibatch, minibatch_size))
                         break
                     saver.save(sess, saver_prefix, global_step)
-                    
+                    minibatch += 1
+                save_savedmodel(sess, model_dir + "champion/saved_model")
+
+            save_savedmodel(sess, model_dir + "champion/saved_model")                    
             take_snapshot(sess, saver, global_step)
-            save_savedmodel(sess, model_dir + "champion/saved_model")
 
 def init_model(sess):
     # add tensors (and corresponding ops) to the default graph

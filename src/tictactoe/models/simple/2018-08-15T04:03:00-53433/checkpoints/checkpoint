@@ -1,0 +1,6 @@
+model_checkpoint_path: "model-53433"
+all_model_checkpoint_paths: "../../champion/checkpoints/model-53430"
+all_model_checkpoint_paths: "../../champion/checkpoints/model-53431"
+all_model_checkpoint_paths: "../../champion/checkpoints/model-53432"
+all_model_checkpoint_paths: "../../champion/checkpoints/model-53433"
+all_model_checkpoint_paths: "model-53433"

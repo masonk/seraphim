@@ -1,0 +1,6 @@
+model_checkpoint_path: "model-41114"
+all_model_checkpoint_paths: "../../champion/checkpoints/model-41111"
+all_model_checkpoint_paths: "../../champion/checkpoints/model-41112"
+all_model_checkpoint_paths: "../../champion/checkpoints/model-41113"
+all_model_checkpoint_paths: "../../champion/checkpoints/model-41114"
+all_model_checkpoint_paths: "model-41114"

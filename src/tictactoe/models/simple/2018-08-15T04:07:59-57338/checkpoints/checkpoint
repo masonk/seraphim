@@ -1,0 +1,6 @@
+model_checkpoint_path: "model-57338"
+all_model_checkpoint_paths: "../../champion/checkpoints/model-57335"
+all_model_checkpoint_paths: "../../champion/checkpoints/model-57336"
+all_model_checkpoint_paths: "../../champion/checkpoints/model-57337"
+all_model_checkpoint_paths: "../../champion/checkpoints/model-57338"
+all_model_checkpoint_paths: "model-57338"
