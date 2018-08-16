@@ -68,19 +68,21 @@ model_dir = "src/tictactoe/models/" + args.name + "/"
 
 # save a new SavedModel to compete in the eternal tournament after running through this many epochs of training
 snapshot_epochs = 1
-minibatch_size = 1
+minibatch_size = 128
 
 # take training examples (stored in TFRecord format) from files in this directory:
 dataset_dir = "src/tictactoe/gamedata"
 
-def make_dataset(minibatch_size, dataset_dir):
+def make_dataset(minibatch, dataset_dir):
     files = glob.glob("{}/*.tfrecord".format(dataset_dir))
-    print(files)
+    # print(files)
     dataset = tf.data.TFRecordDataset(files)
     dataset = dataset.map(parse)
-    dataset = dataset.shuffle(buffer_size=100)
-    dataset = dataset.repeat(1)
-    dataset = dataset.batch(minibatch_size)
+
+    dataset = dataset.shuffle(buffer_size=10000)
+    # dataset = dataset.repeat(1)
+    dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(minibatch_size))
+    # dataset = dataset.batch(minibatch, drop_remainder=True) # v1.10?
     return dataset
 
 def parse(bytes):
@@ -105,8 +107,6 @@ def take_snapshot(sess, saver, global_step, snapshot_id=None):
         None
 
     saver.save(sess, saver_prefix, global_step)
-    print("%s" % saver_prefix)
-    print("%s" % saved_model_dir)
     save_savedmodel(sess, saved_model_dir)
 
 def save_savedmodel(sess, dir):
@@ -167,33 +167,33 @@ def train(sess):
     # for v in [n.name for n in tf.get_default_graph().as_graph_def().node]:
     #     print(v)
     # print("before train loop", sess.run(tf.report_uninitialized_variables()))
+    epoch = 0
     with catch_sigint() as got_sigint:
         while True:
             if got_sigint():
                 break
 
             dataset = make_dataset(minibatch_size, dataset_dir)
-            iterator = dataset.make_one_shot_iterator()
+            iterator = dataset.make_initializable_iterator()
             example_it, label_it = iterator.get_next()
-            minibatch = 0
+            minibatch = sess.run(global_step)
             for i in range(snapshot_epochs):
-                # sess.run(iterator.initializer)
-                example_handle = sess.run(tf.get_session_handle(example_it))
-                label_handle = sess.run(tf.get_session_handle(label_it))
-                print("NEXT EPOCH")
-
+                sess.run(iterator.initializer)
                 while True:
                     if got_sigint():
                         break
                     try:
-                        sess.run(train_op, feed_dict={example_ph: example_handle, label_ph: label_handle})
-                    except tf.errors.OutOfRangeError:
-                        print("EPOCH {} FINISHED. ({} minibatches of {} examples)".format(i, minibatch, minibatch_size))
-                        break
-                    saver.save(sess, saver_prefix, global_step)
-                    minibatch += 1
-                save_savedmodel(sess, model_dir + "champion/saved_model")
+                        e = sess.run(example_it)
+                        l = sess.run(label_it)
+                        sess.run(train_op, feed_dict={example_ph: e, label_ph: l})
 
+                    except tf.errors.OutOfRangeError:
+                        break
+                    if minibatch % 1000 == 0:
+                        saver.save(sess, saver_prefix, global_step)
+                epoch += 1
+
+            print("EPOCH {} FINISHED ({} minibatches of {} examples)".format(epoch, minibatch, minibatch_size))
             save_savedmodel(sess, model_dir + "champion/saved_model")                    
             take_snapshot(sess, saver, global_step)
 

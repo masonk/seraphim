@@ -1,8 +1,6 @@
 - top priority
-    - collect self-play game data into manageable records
-        - want to easily select the most recent n games for training
-        - delete older games automatically
     - periodically load the most recent champion from training
+        - fix race between two processes by using overwrite-by-rename on the champion savedmodel dir
 
     - summary metrics & checkpointing for Tensorboard
     - don't train '1' for the chosen move and '0' everywhere else, train search's prob distribution

@@ -27,8 +27,8 @@ use std::result::Result;
 static MODEL_DIR_PREFIX: &'static str =  "src/tictactoe/models";
 static GAME_DATA: &'static str = "src/tictactoe/gamedata";
 static CONTROL_FILE: &'static str = "src/tictactoe/gamedata/control";
-static GAMES_PER_FILE: i64 = 1;
-static MAX_RECORD_FILES: i64 = 1;
+static GAMES_PER_FILE: i64 = 100;
+static MAX_RECORD_FILES: i64 = 50;
 fn init_logger() {
     flexi_logger::Logger::with_env()
         .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
