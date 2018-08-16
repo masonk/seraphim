@@ -68,7 +68,7 @@ model_dir = "src/tictactoe/models/" + args.name + "/"
 
 # save a new SavedModel to compete in the eternal tournament after running through this many epochs of training
 snapshot_epochs = 1
-minibatch_size = 32
+minibatch_size = 1
 
 # take training examples (stored in TFRecord format) from files in this directory:
 dataset_dir = "src/tictactoe/gamedata"
@@ -78,7 +78,8 @@ def make_dataset(minibatch_size, dataset_dir):
     print(files)
     dataset = tf.data.TFRecordDataset(files)
     dataset = dataset.map(parse)
-    dataset = dataset.shuffle(buffer_size=100000)
+    dataset = dataset.shuffle(buffer_size=100)
+    dataset = dataset.repeat(1)
     dataset = dataset.batch(minibatch_size)
     return dataset
 
@@ -172,13 +173,14 @@ def train(sess):
                 break
 
             dataset = make_dataset(minibatch_size, dataset_dir)
-            iterator = dataset.make_initializable_iterator()
+            iterator = dataset.make_one_shot_iterator()
             example_it, label_it = iterator.get_next()
             minibatch = 0
             for i in range(snapshot_epochs):
-                sess.run(iterator.initializer)
+                # sess.run(iterator.initializer)
                 example_handle = sess.run(tf.get_session_handle(example_it))
                 label_handle = sess.run(tf.get_session_handle(label_it))
+                print("NEXT EPOCH")
 
                 while True:
                     if got_sigint():

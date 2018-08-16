@@ -28,6 +28,7 @@ static MODEL_DIR_PREFIX: &'static str =  "src/tictactoe/models";
 static GAME_DATA: &'static str = "src/tictactoe/gamedata";
 static CONTROL_FILE: &'static str = "src/tictactoe/gamedata/control";
 static GAMES_PER_FILE: i64 = 1;
+static MAX_RECORD_FILES: i64 = 1;
 fn init_logger() {
     flexi_logger::Logger::with_env()
         .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
@@ -87,8 +88,8 @@ fn main() {
             }
         }
         std::fs::rename(next_file_path.clone(), format!("{}.tfrecord", next_file_path)).unwrap();
-        if next_id - 50 >= 0 {
-            let stale = format!("src/tictactoe/gamedata/batch-{}.tfrecord", next_id - 50);
+        if next_id - MAX_RECORD_FILES >= 0 {
+            let stale = format!("src/tictactoe/gamedata/batch-{}.tfrecord", next_id - MAX_RECORD_FILES);
             ::std::fs::remove_file(stale).unwrap();
         }
     }

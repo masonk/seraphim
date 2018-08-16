@@ -1,6 +1,0 @@
-model_checkpoint_path: "model-44833"
-all_model_checkpoint_paths: "../../champion/checkpoints/model-44830"
-all_model_checkpoint_paths: "../../champion/checkpoints/model-44831"
-all_model_checkpoint_paths: "../../champion/checkpoints/model-44832"
-all_model_checkpoint_paths: "../../champion/checkpoints/model-44833"
-all_model_checkpoint_paths: "model-44833"
