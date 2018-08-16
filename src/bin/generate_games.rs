@@ -27,8 +27,8 @@ use std::result::Result;
 static MODEL_DIR_PREFIX: &'static str =  "src/tictactoe/models";
 static GAME_DATA: &'static str = "src/tictactoe/gamedata";
 static CONTROL_FILE: &'static str = "src/tictactoe/gamedata/control";
-static GAMES_PER_FILE: i64 = 100;
-static MAX_RECORD_FILES: i64 = 50;
+static DEFAULT_GAMES_PER_FILE: i64 = 1000;
+static DEFAULT_MAX_FILES: i64 = 50;
 fn init_logger() {
     flexi_logger::Logger::with_env()
         .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
@@ -44,10 +44,24 @@ fn main() {
                             .arg(Arg::with_name("model_dir")
                                 .help("The name of a directory under src/tictactoe/models")
                                 .required(true))
+                            .arg(Arg::with_name("games_per_file")
+                                .help("How many games in each .tfrecord file")
+                                .long("games_per_file")
+                                .takes_value(true))
+                            .arg(Arg::with_name("max_files")
+                                .help("How many .tfrecord files to keep")
+                                .long("max_files")
+                                .takes_value(true))
                             .get_matches();
 
     let model_dir = matches.value_of("model_dir").unwrap();
     let fq_model_dir = format!("{}/{}/{}/{}", MODEL_DIR_PREFIX, model_dir, "champion", "saved_model");
+    let games_per_file = matches.value_of("games_per_file")
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(DEFAULT_GAMES_PER_FILE);
+    let max_files  = matches.value_of("max_files")
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(DEFAULT_MAX_FILES);
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -80,7 +94,7 @@ fn main() {
                 panic!("Couldn't restore a model from '{}'. \nTry running 'src/tictactoe/init.py {}'\nError:\n{:?}", fq_model_dir, model_dir,  e);
             }
         };
-        match do_some_games(&mut ge, GAMES_PER_FILE, writer, running.clone()) {
+        match do_some_games(&mut ge, games_per_file, writer, running.clone()) {
             Ok(c) => count += c,
             Err(err) => {
                 println!("{:?}", err);
@@ -88,8 +102,8 @@ fn main() {
             }
         }
         std::fs::rename(next_file_path.clone(), format!("{}.tfrecord", next_file_path)).unwrap();
-        if next_id - MAX_RECORD_FILES >= 0 {
-            let stale = format!("src/tictactoe/gamedata/batch-{}.tfrecord", next_id - MAX_RECORD_FILES);
+        if next_id - max_files >= 0 {
+            let stale = format!("src/tictactoe/gamedata/batch-{}.tfrecord", next_id - max_files);
             ::std::fs::remove_file(stale).unwrap();
         }
     }

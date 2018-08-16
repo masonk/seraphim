@@ -1,6 +1,5 @@
 - top priority
-    - periodically load the most recent champion from training
-        - fix race between two processes by using overwrite-by-rename on the champion savedmodel dir
+    - atomically overwrite champion savedmodel with the new one, so that the generating process never sees an empty savedmodel
 
     - summary metrics & checkpointing for Tensorboard
     - don't train '1' for the chosen move and '0' everywhere else, train search's prob distribution

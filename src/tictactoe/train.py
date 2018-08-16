@@ -67,7 +67,7 @@ args = parser.parse_args()
 model_dir = "src/tictactoe/models/" + args.name + "/"
 
 # save a new SavedModel to compete in the eternal tournament after running through this many epochs of training
-snapshot_epochs = 1
+snapshot_epochs = 10
 minibatch_size = 128
 
 # take training examples (stored in TFRecord format) from files in this directory:
@@ -119,8 +119,16 @@ def save_savedmodel(sess, dir):
     example = tf.get_collection("example")[0]
     label = tf.get_collection("label")[0]
     softmax = tf.get_collection('softmax')[0]
-    shutil.rmtree(dir, ignore_errors=True)
-    builder = tf.saved_model.builder.SavedModelBuilder(dir)
+
+    a = dir + ".a"
+    b = dir + ".b"
+    prev = a
+    next = b
+    if os.path.exists(next):
+        prev = b
+        next = a
+
+    builder = tf.saved_model.builder.SavedModelBuilder(next)
     training_inputs = {
         "example": build_tensor_info(example),
         "label": build_tensor_info(label)
@@ -150,6 +158,16 @@ def save_savedmodel(sess, dir):
     #     signature_def_map={ PREDICT_METHOD_NAME: serving_inputs },
     #     strip_default_attrs=True)
     builder.save(as_text=False)
+    
+    if os.path.exists(dir):
+        tmplnk = dir + ".tmplnk"
+        os.symlink(os.path.basename(next), tmplnk)
+        os.replace(tmplnk, dir)
+    else:
+        os.symlink(os.path.basename(next), dir)
+
+    shutil.rmtree(prev, ignore_errors=True)
+
 
 def train(sess):
     saver_dir = model_dir + "champion/checkpoints/"
@@ -194,7 +212,7 @@ def train(sess):
                 epoch += 1
 
             print("EPOCH {} FINISHED ({} minibatches of {} examples)".format(epoch, minibatch, minibatch_size))
-            save_savedmodel(sess, model_dir + "champion/saved_model")                    
+            take_snapshot(sess, saver, global_step, "champion")                
             take_snapshot(sess, saver, global_step)
 
 def init_model(sess):
