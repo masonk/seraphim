@@ -1,17 +1,17 @@
 use flexi_logger;
+use io;
 use search;
 use search::GameResult;
-use io;
 use std::fmt;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 use std::sync::{Once, ONCE_INIT};
 static _INIT: Once = ONCE_INIT;
-use tensorflow as tf;
 use protobuf;
 use protobuf::Message;
 use std::collections::HashMap;
+use tensorflow as tf;
 mod gen;
 
 #[derive(Clone, Debug, PartialEq, Copy)]
@@ -27,20 +27,20 @@ struct ParseError {
 #[derive(Debug)]
 pub enum RootErrorCause {
     Tf(tf::Status),
-    Io(::std::io::Error)
+    Io(::std::io::Error),
 }
 
 #[derive(Debug)]
 pub struct TicTacToeError {
     pub msg: String,
-    pub root_error: RootErrorCause
+    pub root_error: RootErrorCause,
 }
 
 impl From<tf::Status> for TicTacToeError {
     fn from(e: tf::Status) -> TicTacToeError {
         TicTacToeError {
             msg: "Tensorflow returned an error.".to_string(),
-            root_error: RootErrorCause::Tf(e)
+            root_error: RootErrorCause::Tf(e),
         }
     }
 }
@@ -49,13 +49,11 @@ impl From<::std::io::Error> for TicTacToeError {
     fn from(e: ::std::io::Error) -> TicTacToeError {
         TicTacToeError {
             msg: "IO error.".to_string(),
-            root_error: RootErrorCause::Io(e)
+            root_error: RootErrorCause::Io(e),
         }
     }
 }
-pub struct TrainOptions {
-
-}
+pub struct TrainOptions {}
 impl TrainOptions {
     pub fn new() -> Self {
         TrainOptions {}
@@ -236,7 +234,6 @@ impl fmt::Display for State {
     }
 }
 
-
 #[derive(Debug)]
 pub struct DnnGameExpert {
     root_state: State,
@@ -271,11 +268,13 @@ impl DnnGameExpert {
 
         let mut graph = tf::Graph::new();
 
-        let tags : [&str; 0] = [];
-        let mut session = tf::Session::from_saved_model(&tf::SessionOptions::new(),
-                                                &["serve", "train"],
-                                                &mut graph,
-                                                model_filename)?;
+        let tags: [&str; 0] = [];
+        let mut session = tf::Session::from_saved_model(
+            &tf::SessionOptions::new(),
+            &["serve", "train"],
+            &mut graph,
+            model_filename,
+        )?;
         trace!("...success.");
 
         Ok(DnnGameExpert {
@@ -300,7 +299,10 @@ impl DnnGameExpert {
         x
     }
 
-    pub fn play_one_game(&mut self, mut searcher: search::SearchTree<State, usize>) -> Result<State, TicTacToeError> {
+    pub fn play_one_game(
+        &mut self,
+        mut searcher: search::SearchTree<State, usize>,
+    ) -> Result<State, TicTacToeError> {
         let mut game = State::new();
         loop {
             if let search::GameResult::InProgress = game.status {
@@ -334,7 +336,6 @@ impl DnnGameExpert {
         feature
     }
     fn move_to_feature(probs: Vec<f32>) -> gen::feature::Feature {
-
         let mut float_list = gen::feature::FloatList::new();
         float_list.set_value(probs);
 
@@ -343,11 +344,13 @@ impl DnnGameExpert {
         feature
     }
 
-    pub fn play_and_record_one_game<W: ::std::io::Write>(&mut self, 
-        mut searcher: search::SearchTree<State, usize>, 
-        dest: &mut W) -> Result<State, TicTacToeError> {
+    pub fn play_and_record_one_game<W: ::std::io::Write>(
+        &mut self,
+        mut searcher: search::SearchTree<State, usize>,
+        dest: &mut W,
+    ) -> Result<State, TicTacToeError> {
         let mut game = State::new();
-        let mut writer = io::tf::RecordWriter::new(dest); 
+        let mut writer = io::tf::RecordWriter::new(dest);
         loop {
             let mut count = 0;
             if let search::GameResult::InProgress = game.status {
@@ -357,8 +360,7 @@ impl DnnGameExpert {
                 for i in 0..9 {
                     if next == i {
                         probs.push(1.0);
-                    }
-                    else {
+                    } else {
                         probs.push(0.0);
                     }
                 }
@@ -383,11 +385,13 @@ impl DnnGameExpert {
         Ok(game)
     }
 
-    pub fn train_next_example<R: ::std::io::Read>(&mut self, 
-        options: TrainOptions, 
-        source: &mut R) -> Result<(), TicTacToeError> {
+    pub fn train_next_example<R: ::std::io::Read>(
+        &mut self,
+        options: TrainOptions,
+        source: &mut R,
+    ) -> Result<(), TicTacToeError> {
         let mut state = tf::Tensor::new(&[1, 19]);
-        
+
         source.read_exact(&mut state)?;
         let mut choice_buf = [0; 9];
         let mut choice = tf::Tensor::new(&[1, 9]);
@@ -395,7 +399,7 @@ impl DnnGameExpert {
         for i in 0..9 {
             choice[i] = choice_buf[i] as f32;
         }
-        
+
         let op_x = self.graph.operation_by_name_required("example")?;
         let op_y_true = self.graph.operation_by_name_required("label")?;
         let op_train = self.graph.operation_by_name_required("train")?;
@@ -425,7 +429,8 @@ impl DnnGameExpert {
             trace!("game {}", i);
             let initial_search_state = State::new();
             let mut game = initial_search_state.clone();
-            let mut search = search::SearchTree::init_with_options(initial_search_state, options.clone());
+            let mut search =
+                search::SearchTree::init_with_options(initial_search_state, options.clone());
             loop {
                 if let search::GameResult::InProgress = game.status {
                     let next = search.read_and_apply(self);
@@ -457,32 +462,40 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
     // This has to come after multi-threading the search, since threads block
     // while waiting for their batch to accumulate.
     fn hypotheses(&mut self, state: &State) -> search::Hypotheses<usize> {
-
         debug!("{}", state);
         let example = self.graph.operation_by_name_required("example").unwrap();
         let softmax = self.graph.operation_by_name_required("softmax").unwrap();
 
         let state_tensor = Self::state_tensor(state);
-        let mut legal_actions : Vec<(usize, f32)> = vec![];
+        let mut legal_actions: Vec<(usize, f32)> = vec![];
         {
             let mut inference_step = tf::SessionRunArgs::new();
             inference_step.add_feed(&example, 0, &state_tensor);
             let softmax_output_token = inference_step.request_output(&softmax, 0);
 
-            self.session.run(&mut inference_step).expect("failed to run inference step");
+            self.session
+                .run(&mut inference_step)
+                .expect("failed to run inference step");
 
-            let inferences : tf::Tensor<f32> = inference_step.take_output(softmax_output_token).unwrap();
+            let inferences: tf::Tensor<f32> =
+                inference_step.take_output(softmax_output_token).unwrap();
             debug!("raw inferences:");
             for i in 0..3 {
                 let o = i * 3;
-                debug!("{0: <w$.w$} | {1: <w$.w$} | {2: <w$.w$}", inferences[o], inferences[o+1], inferences[o+2], w=5);
+                debug!(
+                    "{0: <w$.w$} | {1: <w$.w$} | {2: <w$.w$}",
+                    inferences[o],
+                    inferences[o + 1],
+                    inferences[o + 2],
+                    w = 5
+                );
             }
             debug!("");
 
             let mut legal_probability = 0.0;
             for i in (0..9).into_iter() {
                 let is_legal = !(state.board[0][i] || state.board[1][i]);
-                
+
                 if is_legal {
                     legal_actions.push((i, inferences[i]));
                     legal_probability += inferences[i];
@@ -491,21 +504,30 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
             // ax = 1
             // a = 1 / x
             let scale = 1.0 / legal_probability; // there must always be at least one legal action
-            for &mut(_, ref mut prior) in legal_actions.iter_mut() {
+            for &mut (_, ref mut prior) in legal_actions.iter_mut() {
                 *prior *= scale;
             }
             trace!("redistributed inferences:");
-            let trcinf = (0..9).into_iter().map(|i| {
-               if state.board[0][i] || state.board[1][i] {
-                    0.0
-               } else {
-                    inferences[i] * scale
-               }
-            }).collect::<Vec<f32>>();
+            let trcinf = (0..9)
+                .into_iter()
+                .map(|i| {
+                    if state.board[0][i] || state.board[1][i] {
+                        0.0
+                    } else {
+                        inferences[i] * scale
+                    }
+                })
+                .collect::<Vec<f32>>();
 
             for i in 0..3 {
                 let o = i * 3;
-                trace!("{0: <w$.w$} | {1: <w$.w$} | {2: <w$.w$}", trcinf[o], trcinf[o+1], trcinf[o+2], w = 3);
+                trace!(
+                    "{0: <w$.w$} | {1: <w$.w$} | {2: <w$.w$}",
+                    trcinf[o],
+                    trcinf[o + 1],
+                    trcinf[o + 2],
+                    w = 3
+                );
             }
             trace!("");
         }
@@ -546,7 +568,7 @@ impl search::GameExpert<State, usize> for DumbGameExpert {
             .filter(|&i| !(state.board[0][i] || state.board[1][i]))
             .map(|i| (i, prob))
             .collect::<Vec<(usize, f32)>>();
-        
+
         search::Hypotheses {
             legal_actions,
             to_win: 0.5,
@@ -566,7 +588,7 @@ impl search::GameExpert<State, usize> for DumbGameExpert {
 fn _setup_test() {
     _INIT.call_once(|| {
         _init_env_logger();
-    });        
+    });
 }
 
 fn _init_env_logger() {
@@ -590,28 +612,31 @@ mod expert {
             let model_filename = "src/tictactoe/simple_model/test_model";
 
             let mut ge = match super::DnnGameExpert::from_saved_model(model_filename) {
-                Ok(ge) => {
-                    ge
-                },
+                Ok(ge) => ge,
                 Err(e) => {
                     trace!("Could not open saved model at '{}'. Error: \n{:?}\nAttempting to initialize a new model with random weights.", model_filename, e);
-                    let res = super::DnnGameExpert::init_with_random_weights(graph_filename, model_filename);
+                    let res = super::DnnGameExpert::init_with_random_weights(
+                        graph_filename,
+                        model_filename,
+                    );
                     match res {
-                        Ok(ge) => {
-                            ge
-                        },
-                        Err(e) => panic!("Couldn't initialize a new model at '{}'. Error:\n{:?}", model_filename, e),
+                        Ok(ge) => ge,
+                        Err(e) => panic!(
+                            "Couldn't initialize a new model at '{}'. Error:\n{:?}",
+                            model_filename, e
+                        ),
                     }
                 }
             };
-            
+
             let mut options = search::SearchTreeOptions::defaults();
             options.readouts = 1500;
             options.tempering_point = 2;
             options.cpuct = 1.5;
 
             let initial_search_state = State::new();
-            let searcher = search::SearchTree::init_with_options(initial_search_state, options.clone());
+            let searcher =
+                search::SearchTree::init_with_options(initial_search_state, options.clone());
 
             let game = ge.play_one_game(searcher).unwrap();
             if game.status == GameResult::TerminatedWithoutResult {

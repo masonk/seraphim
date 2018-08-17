@@ -4,9 +4,10 @@
 #![feature(nll)]
 #![feature(test)]
 
+pub mod evaluation;
+pub mod io;
 pub mod search;
 pub mod tictactoe;
-pub mod io;
 
 #[macro_use]
 extern crate lazy_static;

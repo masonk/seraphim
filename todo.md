@@ -1,4 +1,7 @@
 - top priority
+    - the dataset doesn't acquire a file handle until data is actually being read from it
+        - problem: we need to acquire file handles when the dset is created, or else there's a race between
+        generate_games.rs and the dataset.
     - some sort of generalized debugging system for evaluating the strength of the game
     - summary metrics & checkpointing for Tensorboard
 
