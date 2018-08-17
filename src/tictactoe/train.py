@@ -222,15 +222,16 @@ def init_model(sess):
     tf.add_to_collection("example", example)
     tf.add_to_collection("label", label)
 
-    dense = tf.layers.dense(tf.cast(example, tf.float32), units=64, activation=tf.nn.relu, name="dense")
-    logits = tf.layers.dense(dense, units=9, activation=tf.nn.relu, name="logits")
+    dense1 = tf.layers.dense(tf.cast(example, tf.float32), units=128, activation=tf.nn.relu, name="dense1")
+    dense2 = tf.layers.dense(dense1, units=92, activation=tf.nn.relu, name="dense2")
+    logits = tf.layers.dense(dense2, units=9, activation=tf.nn.relu, name="logits")
     softmax = tf.nn.softmax(logits, name='softmax')
     tf.add_to_collection('softmax', softmax)
     global_step = tf.Variable(0, name='global_step', trainable=False)
     tf.add_to_collection('global_step', global_step)
 
     loss = tf.losses.mean_squared_error(labels=label, predictions=softmax)
-    optimizer = tf.train.GradientDescentOptimizer(.01)
+    optimizer = tf.train.AdamOptimizer(.01)
 
     train = optimizer.minimize(loss, name='train', global_step=global_step)
     tf.add_to_collection('train', train)
