@@ -4,21 +4,26 @@ use rand;
 use rand::Rng;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum GameResult {
+pub enum GameStatus {
     InProgress,
     TerminatedWithoutResult,
     LastPlayerWon,
     LastPlayerLost,
 }
-
+#[derive(Debug)]
 pub struct Hypotheses<Action> {
     pub legal_actions: Vec<(Action, f32)>,
     pub to_win: f32,
 }
 
+#[derive(Debug)]
 pub struct SearchResult<Action> {
     pub next_move: Action,              // the chosen Action
     pub hypotheses: Hypotheses<Action>, // for training the expert
+}
+
+pub trait State: ::std::fmt::Display + ::std::hash::Hash + ::std::clone::Clone + ::std::fmt::Debug {
+    fn status(&self) -> GameStatus;
 }
 /* 
 The expert that guides the MCTS search is abstracted by the GameExpert trait, which users of this library are to implement.  The GameExpert knows the rules of the game it's playing, and also has bayesian prior beliefs about which moves are best to play and the probability that the next player will ultimately win the game.
@@ -30,7 +35,7 @@ State is a state of the game. It will be created by apply()ing an Action to an e
 */
 pub trait GameExpert<State, Action>
 where
-    State: ::std::hash::Hash,
+    State: self::State,
 {
     // TODO: The AGZ paper minibatches the request for expert policies
     // into batches of 8 hypotheses. There should be a way of batching these requests
@@ -39,10 +44,6 @@ where
     fn hypotheses(&mut self, state: &State) -> Hypotheses<Action>;
 
     fn next(&mut self, &State, &Action) -> State; // When MCTS choses an action for the first time, it will call this function to obtain the new state. Used during the MCTS leaf expansion step.
-
-    // What is the search::GameResult of this game? Search continues until it reaches a terminal (non-InProgress) state, and then backpropagates based on the final result of the game.
-    // and then
-    fn result(&self, &State) -> GameResult;
 
     // TODO: is this function necessary, or should GameExperts just train themselves to be more likely to play the chosen move?
     // // train() will be called once per move that was actually made in the game.
@@ -106,7 +107,7 @@ impl SearchTreeOptions {
 #[derive(Debug)]
 pub struct SearchTree<State, Action>
 where
-    State: ::std::hash::Hash + ::std::fmt::Debug + ::std::fmt::Display,
+    State: self::State,
     Action: PartialEq + ::std::hash::Hash + ::std::fmt::Debug,
 {
     rand: rand::ThreadRng,
@@ -118,7 +119,7 @@ where
 
 impl<State, Action> SearchTree<State, Action>
 where
-    State: ::std::hash::Hash + ::std::fmt::Debug + ::std::fmt::Display,
+    State: self::State,
     Action: PartialEq + ::std::hash::Hash + ::std::fmt::Debug,
 {
     // Start a new game that will be played by iterative searching
@@ -140,7 +141,7 @@ where
     }
 
     pub fn current_state_ref(&self) -> &State {
-        &self.search_tree[idx]
+        &self.search_tree[self.root_idx].state
     }
 
     pub fn read_and_apply(&mut self, game_expert: &mut GameExpert<State, Action>) -> Action {
@@ -238,26 +239,26 @@ where
     }
 
     // update the search tree by applying an action.
-    pub fn apply(&mut self, action: Action) {
+    pub fn apply(&mut self, action: &Action) {
         let next_node_idx = self.search_tree
             .neighbors(self.root_idx)
             .find(|node_idx| {
-                self.search_tree[self.parent_edge_idx(*node_idx).unwrap()].action == action
+                &self.search_tree[self.parent_edge_idx(*node_idx).unwrap()].action == action
             })
             .unwrap();
         self.ply += 1;
         self.root_idx = next_node_idx;
         // TODO: delete all nodes and edges that are not reachable from root
     }
-    // recursively follow the search to a terminal node (A node where GameResult is not InProgress),
+    // recursively follow the search to a terminal node (A node where GameStatus is not InProgress),
     // then back up the tree, updating edge weights.f
     fn read_to_end(&mut self, node_idx: NodeIdx, game_expert: &mut GameExpert<State, Action>) {
         let self_ptr = self as *mut Self;
         unsafe {
             let node = (*self_ptr).search_tree.node_weight_mut(node_idx).unwrap();
-            let result = game_expert.result(&node.state);
-            match result {
-                GameResult::InProgress => {
+            let status = node.state.status();
+            match status {
+                GameStatus::InProgress => {
                     if !node.expanded {
                         self.expand(node_idx, game_expert);
                     }
@@ -266,10 +267,10 @@ where
                     return self.read_to_end(next_idx, game_expert);
                 }
                 _ => {
-                    match result {
-                        GameResult::LastPlayerLost => self.backup(-1.0, node_idx),
-                        GameResult::LastPlayerWon => self.backup(1.0, node_idx),
-                        GameResult::TerminatedWithoutResult => self.backup(0.0, node_idx),
+                    match status {
+                        GameStatus::LastPlayerLost => self.backup(-1.0, node_idx),
+                        GameStatus::LastPlayerWon => self.backup(1.0, node_idx),
+                        GameStatus::TerminatedWithoutResult => self.backup(0.0, node_idx),
                         _ => {
                             warn!("Tried to backup some unknown terminal state. Algorithm error. ")
                         }
@@ -400,10 +401,9 @@ where
         {
             let node = &self.search_tree[node_idx];
             let state = &node.state;
-            let result = game_expert.result(state);
 
-            match &result {
-                &GameResult::InProgress => {}
+            match &state.status() {
+                &GameStatus::InProgress => {}
                 _ => {
                     return;
                 }

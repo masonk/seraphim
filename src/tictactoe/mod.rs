@@ -1,14 +1,13 @@
 use flexi_logger;
 use io;
 use search;
-use search::GameResult;
+use search::GameStatus;
 use std::fmt;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 use std::sync::{Once, ONCE_INIT};
 static _INIT: Once = ONCE_INIT;
-use protobuf;
 use protobuf::Message;
 use std::collections::HashMap;
 use tensorflow as tf;
@@ -65,7 +64,7 @@ impl TrainOptions {
 pub struct State {
     pub board: [[bool; 9]; 2],
     pub next_player: usize,
-    pub status: GameResult,
+    pub status: GameStatus,
     pub plys: usize,
 }
 impl State {
@@ -73,7 +72,7 @@ impl State {
         Self {
             board: [[false; 9]; 2],
             next_player: 0,
-            status: GameResult::InProgress,
+            status: GameStatus::InProgress,
             plys: 0,
         }
     }
@@ -95,7 +94,7 @@ impl State {
         let mut val = Self::new();
         let mut plys = 0;
         let mut count = 0;
-        let mut winner = GameResult::InProgress;
+        let mut winner = GameStatus::InProgress;
         for (i, c) in s.chars()
             .filter(|c| !c.is_whitespace() && *c != '|')
             .enumerate()
@@ -106,7 +105,7 @@ impl State {
                     val.place_and_check_winner(i, 0).map_err(|err| ParseError {
                         msg: format!("{:?} when adding move {} @ {}", err, c, i),
                     })?;
-                    if winner == GameResult::InProgress {
+                    if winner == GameStatus::InProgress {
                         winner = val.status;
                     }
                     plys += 1;
@@ -115,7 +114,7 @@ impl State {
                     val.place_and_check_winner(i, 1).map_err(|err| ParseError {
                         msg: format!("{:?} when parsing move {} @ {}", err, c, i),
                     })?;
-                    if winner == GameResult::InProgress {
+                    if winner == GameStatus::InProgress {
                         winner = val.status;
                     }
                     plys += 1;
@@ -169,14 +168,14 @@ impl State {
         self.place_unchecked(idx, player)?;
         if self.check_winner(idx, player) {
             // trace!("{} (Player {} won)\n", self, Self::to_mark(player));
-            self.status = GameResult::LastPlayerWon;
+            self.status = GameStatus::LastPlayerWon;
             return Ok(());
         }
         // trace!("{} at {}\n{}\n", Self::to_mark(player), idx, self);
         self.plys += 1;
         self.status = match self.plys {
-            9 => GameResult::TerminatedWithoutResult,
-            _ => GameResult::InProgress,
+            9 => GameStatus::TerminatedWithoutResult,
+            _ => GameStatus::InProgress,
         };
         Ok(())
     }
@@ -234,6 +233,12 @@ impl fmt::Display for State {
     }
 }
 
+impl search::State for State {
+    fn status(&self) -> search::GameStatus {
+        self.status
+    }
+}
+
 #[derive(Debug)]
 pub struct DnnGameExpert {
     root_state: State,
@@ -269,7 +274,7 @@ impl DnnGameExpert {
         let mut graph = tf::Graph::new();
 
         let tags: [&str; 0] = [];
-        let mut session = tf::Session::from_saved_model(
+        let session = tf::Session::from_saved_model(
             &tf::SessionOptions::new(),
             &["serve", "train"],
             &mut graph,
@@ -305,7 +310,7 @@ impl DnnGameExpert {
     ) -> Result<State, TicTacToeError> {
         let mut game = State::new();
         loop {
-            if let search::GameResult::InProgress = game.status {
+            if let search::GameStatus::InProgress = game.status {
                 let next = searcher.read_and_apply(self);
                 game.play(next).unwrap();
                 info!("Search chose {}@\n{}", next, game);
@@ -352,8 +357,7 @@ impl DnnGameExpert {
         let mut game = State::new();
         let mut writer = io::tf::RecordWriter::new(dest);
         loop {
-            let mut count = 0;
-            if let search::GameResult::InProgress = game.status {
+            if let search::GameStatus::InProgress = game.status {
                 let next = searcher.read_and_apply(self);
                 let state_feature = Self::game_to_feature(&game);
                 let mut probs = Vec::<f32>::with_capacity(9);
@@ -403,9 +407,9 @@ impl DnnGameExpert {
         let op_x = self.graph.operation_by_name_required("example")?;
         let op_y_true = self.graph.operation_by_name_required("label")?;
         let op_train = self.graph.operation_by_name_required("train")?;
-        let mut train_step = tf::StepWithGraph::new();
-        train_step.add_input(&op_x, 0, &state);
-        train_step.add_input(&op_y_true, 0, &choice);
+        let mut train_step = tf::SessionRunArgs::new();
+        train_step.add_feed(&op_x, 0, &state);
+        train_step.add_feed(&op_y_true, 0, &choice);
         train_step.add_target(&op_train);
         self.session.run(&mut train_step)?;
         Ok(())
@@ -432,7 +436,7 @@ impl DnnGameExpert {
             let mut search =
                 search::SearchTree::init_with_options(initial_search_state, options.clone());
             loop {
-                if let search::GameResult::InProgress = game.status {
+                if let search::GameStatus::InProgress = game.status {
                     let next = search.read_and_apply(self);
 
                     // x is game state
@@ -441,9 +445,9 @@ impl DnnGameExpert {
                     let mut y_true = tf::Tensor::new(&[1, 9]);
                     y_true[next] = 1.0f32;
 
-                    let mut train_step = tf::StepWithGraph::new();
-                    train_step.add_input(&op_x, 0, &x);
-                    train_step.add_input(&op_y_true, 0, &y_true);
+                    let mut train_step = tf::SessionRunArgs::new();
+                    train_step.add_feed(&op_x, 0, &x);
+                    train_step.add_feed(&op_y_true, 0, &y_true);
                     train_step.add_target(&op_train);
                     self.session.run(&mut train_step)?;
                     game.play(next).unwrap();
@@ -471,14 +475,14 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
         {
             let mut inference_step = tf::SessionRunArgs::new();
             inference_step.add_feed(&example, 0, &state_tensor);
-            let softmax_output_token = inference_step.request_output(&softmax, 0);
+            let softmax_output_token = inference_step.request_fetch(&softmax, 0);
 
             self.session
                 .run(&mut inference_step)
                 .expect("failed to run inference step");
 
             let inferences: tf::Tensor<f32> =
-                inference_step.take_output(softmax_output_token).unwrap();
+                inference_step.fetch(softmax_output_token).unwrap();
             debug!("raw inferences:");
             for i in 0..3 {
                 let o = i * 3;
@@ -543,10 +547,6 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
         clone.play(*action).unwrap();
         clone
     }
-
-    fn result(&self, state: &State) -> search::GameResult {
-        state.status
-    }
 }
 
 /*
@@ -578,10 +578,6 @@ impl search::GameExpert<State, usize> for DumbGameExpert {
         let mut clone = state.clone();
         clone.play(*action).unwrap();
         clone
-    }
-
-    fn result(&self, state: &State) -> search::GameResult {
-        state.status
     }
 }
 
@@ -639,7 +635,7 @@ mod expert {
                 search::SearchTree::init_with_options(initial_search_state, options.clone());
 
             let game = ge.play_one_game(searcher).unwrap();
-            if game.status == GameResult::TerminatedWithoutResult {
+            if game.status == GameStatus::TerminatedWithoutResult {
                 draw += 1;
             }
         }
@@ -669,11 +665,11 @@ mod expert {
                 options.cpuct = 3.0;
                 let mut search = search::SearchTree::init_with_options(State::new(), options);
                 loop {
-                    if let GameResult::InProgress = game.status {
+                    if let GameStatus::InProgress = game.status {
                         let next = search.read_and_apply(&mut game_expert);
                         game.play(next).unwrap();
                     } else {
-                        if game.status == GameResult::TerminatedWithoutResult {
+                        if game.status == GameStatus::TerminatedWithoutResult {
                             draw += 1;
                         }
                         break;
@@ -720,7 +716,7 @@ mod expert {
             options.cpuct = 0.1;
             let mut search = search::SearchTree::init_with_options(State::new(), options);
             loop {
-                if let GameResult::InProgress = game.status {
+                if let GameStatus::InProgress = game.status {
                     let next = search.read_and_apply(&mut game_expert);
                     game.play(next).unwrap();
                 } else {
@@ -769,7 +765,7 @@ mod basic {
 
         trace!("{}", state);
 
-        assert_eq!(state.status, GameResult::LastPlayerWon);
+        assert_eq!(state.status, GameStatus::LastPlayerWon);
         assert_eq!(state.next_player, 0);
     }
 
@@ -798,7 +794,7 @@ mod basic {
 
         trace!("{}", state);
 
-        assert_eq!(state.status, GameResult::LastPlayerWon);
+        assert_eq!(state.status, GameStatus::LastPlayerWon);
         assert_eq!(state.next_player, 1);
     }
 
@@ -814,7 +810,7 @@ mod basic {
 
         trace!("{}", state);
 
-        assert_eq!(state.status, GameResult::LastPlayerWon);
+        assert_eq!(state.status, GameStatus::LastPlayerWon);
         assert_eq!(state.next_player, 0);
     }
 }

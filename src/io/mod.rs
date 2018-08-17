@@ -1,6 +1,5 @@
 use std::io;
 use std::fs;
-use regex::Regex;
 pub mod tf;
 
 pub fn get_current_data_filename(dir: &str, prefix: &str, max: i64) -> Result<(i64, String), io::Error> {
