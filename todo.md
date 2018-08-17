@@ -1,11 +1,9 @@
 - top priority
-    - atomically overwrite champion savedmodel with the new one, so that the generating process never sees an empty savedmodel
-
+    - some sort of generalized debugging system for evaluating the strength of the game
     - summary metrics & checkpointing for Tensorboard
-    - don't train '1' for the chosen move and '0' everywhere else, train search's prob distribution
-        - after doing this, easy to add cross-entropy, equal weight to mse
 
-        
+    - don't train '1' for the chosen move and '0' everywhere else, train search's prob distribution
+        - after doing this, easy to add cross-entropy, equal weight to mse    
     - L2 regularization 10e-4
     - Adam optimizer
     - loss = mse + cross_entropy + l2 regularization
@@ -14,7 +12,7 @@
     - minibatches were uniformly sampled from "the most recent 500,000 games of self-play" (I'm guessing each move was individually sampled?)
     - every 1,000 minibatches, a new checkpoint of the model is evaluated
         - if it's better, it replace the previous model and new games are generated using it.
-    - configure model + graph from a configuration file
+    - configure model + graph from a configuration file (?)
     - hash game_data and model based on graph and model
     - regularziation and batch training
     - add to_win to the hypothesis api

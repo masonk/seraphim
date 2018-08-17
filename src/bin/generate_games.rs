@@ -4,6 +4,7 @@ extern crate alloc_system;
 extern crate flexi_logger;
 extern crate seraphim;
 extern crate clap;
+extern crate fs2;
 
 #[macro_use]
 extern crate log;
@@ -23,6 +24,8 @@ use std::io;
 use std::path::Path;
 use std::process::exit;
 use std::result::Result;
+
+use fs2::FileExt;
 
 static MODEL_DIR_PREFIX: &'static str =  "src/tictactoe/models";
 static GAME_DATA: &'static str = "src/tictactoe/gamedata";
@@ -78,6 +81,10 @@ fn main() {
         let next_id = get_next_file_id().unwrap();
         println!("{}", next_id);
         let next_file_path = format!("src/tictactoe/gamedata/batch-{}", next_id);
+        let lock_path = format!("{}/{}/{}/{}", MODEL_DIR_PREFIX, model_dir, "champion", "lock");
+        let lock = File::open(lock_path).unwrap();
+        lock.lock_shared().unwrap();
+
         let file = ::std::fs::OpenOptions::new()
             .write(true)
             .truncate(true)
@@ -86,6 +93,7 @@ fn main() {
             .unwrap();
 
         let mut writer = ::std::io::BufWriter::new(file);
+
         let mut ge = match seraphim::tictactoe::DnnGameExpert::from_saved_model(&fq_model_dir) {
             Ok(ge) => {
                 ge
@@ -94,6 +102,7 @@ fn main() {
                 panic!("Couldn't restore a model from '{}'. \nTry running 'src/tictactoe/init.py {}'\nError:\n{:?}", fq_model_dir, model_dir,  e);
             }
         };
+        lock.unlock();
         match do_some_games(&mut ge, games_per_file, writer, running.clone()) {
             Ok(c) => count += c,
             Err(err) => {
@@ -103,8 +112,12 @@ fn main() {
         }
         std::fs::rename(next_file_path.clone(), format!("{}.tfrecord", next_file_path)).unwrap();
         if next_id - max_files >= 0 {
+            let lock = File::open("src/tictactoe/gamedata/lock").unwrap();
+            lock.lock_exclusive().unwrap();
+
             let stale = format!("src/tictactoe/gamedata/batch-{}.tfrecord", next_id - max_files);
-            ::std::fs::remove_file(stale).unwrap();
+            ::std::fs::remove_file(stale);
+            lock.unlock().unwrap();
         }
     }
 

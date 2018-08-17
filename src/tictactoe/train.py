@@ -12,6 +12,7 @@ import os
 import shutil
 import signal
 import tensorflow as tf
+import fcntl
 
 from tensorflow.python.saved_model.signature_constants import REGRESS_METHOD_NAME, PREDICT_METHOD_NAME
 from tensorflow.python.saved_model.signature_def_utils import build_signature_def
@@ -74,6 +75,10 @@ minibatch_size = 128
 dataset_dir = "src/tictactoe/gamedata"
 
 def make_dataset(minibatch, dataset_dir):
+
+    lock = open(dataset_dir + "/lock", 'w+')
+    fcntl.flock(lock, fcntl.LOCK_SH)
+
     files = glob.glob("{}/*.tfrecord".format(dataset_dir))
     # print(files)
     dataset = tf.data.TFRecordDataset(files)
@@ -83,6 +88,8 @@ def make_dataset(minibatch, dataset_dir):
     # dataset = dataset.repeat(1)
     dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(minibatch_size))
     # dataset = dataset.batch(minibatch, drop_remainder=True) # v1.10?
+    
+    fcntl.flock(lock, fcntl.LOCK_UN)
     return dataset
 
 def parse(bytes):
@@ -100,16 +107,15 @@ def take_snapshot(sess, saver, global_step, snapshot_id=None):
     snapshot_dir = model_dir + snapshot_id + "/"
     saver_dir = model_dir + snapshot_id + "/checkpoints/"
     saver_prefix = saver_dir + "model"
-    saved_model_dir = snapshot_dir + "saved_model"
     try:
         os.makedirs(saver_dir)
     except:
         None
 
     saver.save(sess, saver_prefix, global_step)
-    save_savedmodel(sess, saved_model_dir)
+    save_savedmodel(sess, snapshot_dir)
 
-def save_savedmodel(sess, dir):
+def save_savedmodel(sess, snapshot_dir):
     # SavedModels are "hermetic" complete representations of the training model, meant for consumption
     # across binary boundaries. They have the unfortunate side effect of not being easy to continue training with.
     # In essence, they're frozen snapshots of the model at a moment in time. We periodically save snapshots
@@ -119,16 +125,13 @@ def save_savedmodel(sess, dir):
     example = tf.get_collection("example")[0]
     label = tf.get_collection("label")[0]
     softmax = tf.get_collection('softmax')[0]
+    savedmodel_dir = snapshot_dir + "/saved_model"
 
-    a = dir + ".a"
-    b = dir + ".b"
-    prev = a
-    next = b
-    if os.path.exists(next):
-        prev = b
-        next = a
+    lock = open(snapshot_dir + "/lock", 'w+')
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    shutil.rmtree(savedmodel_dir, ignore_errors=True)
 
-    builder = tf.saved_model.builder.SavedModelBuilder(next)
+    builder = tf.saved_model.builder.SavedModelBuilder(savedmodel_dir)
     training_inputs = {
         "example": build_tensor_info(example),
         "label": build_tensor_info(label)
@@ -159,15 +162,7 @@ def save_savedmodel(sess, dir):
     #     strip_default_attrs=True)
     builder.save(as_text=False)
     
-    if os.path.exists(dir):
-        tmplnk = dir + ".tmplnk"
-        os.symlink(os.path.basename(next), tmplnk)
-        os.replace(tmplnk, dir)
-    else:
-        os.symlink(os.path.basename(next), dir)
-
-    shutil.rmtree(prev, ignore_errors=True)
-
+    fcntl.flock(lock, fcntl.LOCK_UN)
 
 def train(sess):
     saver_dir = model_dir + "champion/checkpoints/"

@@ -20,6 +20,7 @@ ctrlc = { version = "*", features = ["termination"] }
 protobuf = "*"
 crc32c = "*"
 byteorder = "*"
+fs2 = "*"
 
 [profile.release]
 lto = true
