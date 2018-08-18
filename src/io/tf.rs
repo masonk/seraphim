@@ -1,4 +1,3 @@
-
 use std::io;
 use std::io::prelude::*;
 extern crate byteorder;
@@ -8,24 +7,33 @@ use self::byteorder::WriteBytesExt;
 // TODO: this is merged into rust-tensorflow now, so delete this and use it from rust-tensorflow
 // (Blocked until they release a new crate version)
 pub struct RecordWriter<W: Write> {
-    writer: W
+    writer: W,
 }
 
-impl<W> RecordWriter<W> where W: Write {
+impl<W> RecordWriter<W>
+where
+    W: Write,
+{
     pub fn new(writer: W) -> Self {
         RecordWriter { writer }
     }
     pub fn write_one_record(&mut self, bytes: &[u8]) -> io::Result<usize> {
         let mut len_bytes = vec![];
-        len_bytes.write_u64::<byteorder::LittleEndian>(bytes.len() as u64).unwrap();
+        len_bytes
+            .write_u64::<byteorder::LittleEndian>(bytes.len() as u64)
+            .unwrap();
 
         let masked_len_crc32c = Self::mask(crc32c::crc32c(&len_bytes));
         let mut len_crc32c_bytes: Vec<u8> = vec![];
-        len_crc32c_bytes.write_u32::<byteorder::LittleEndian>(masked_len_crc32c).unwrap();
+        len_crc32c_bytes
+            .write_u32::<byteorder::LittleEndian>(masked_len_crc32c)
+            .unwrap();
 
         let masked_bytes_crc32c = Self::mask(crc32c::crc32c(&bytes));
         let mut bytes_crc32_bytes: Vec<u8> = vec![];
-        bytes_crc32_bytes.write_u32::<byteorder::LittleEndian>(masked_bytes_crc32c).unwrap();
+        bytes_crc32_bytes
+            .write_u32::<byteorder::LittleEndian>(masked_bytes_crc32c)
+            .unwrap();
 
         self.writer.write(&len_bytes)?;
         self.writer.write(&len_crc32c_bytes)?;

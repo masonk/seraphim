@@ -11,8 +11,7 @@ fn init_logger() {
         .unwrap();
 }
 
-
-fn main () {
+fn main() {
     // regenerate_rust_gencode();
 
 }
@@ -24,7 +23,7 @@ fn main () {
 // fn regenerate_rust_gencode() {
 //     protoc_rust::run(protoc_rust::Args {
 //         out_dir: "src/tictactoe/gen",
-//         input: &["src/third_party/tensorflow/core/example/example.proto", 
+//         input: &["src/third_party/tensorflow/core/example/example.proto",
 //         "src/third_party/tensorflow/core/example/feature.proto"],
 //         includes: &["src/third_party"],
 //     }).expect("protoc");

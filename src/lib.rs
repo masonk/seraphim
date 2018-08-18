@@ -11,16 +11,16 @@ pub mod tictactoe;
 
 #[macro_use]
 extern crate lazy_static;
+extern crate flexi_logger;
 extern crate left_pad;
 extern crate regex;
 extern crate test;
 extern crate vec_map;
-extern crate flexi_logger;
 
 #[macro_use]
 extern crate log;
-extern crate petgraph;
-extern crate rand;
-extern crate protobuf;
-extern crate tensorflow;
 extern crate clap;
+extern crate petgraph;
+extern crate protobuf;
+extern crate rand;
+extern crate tensorflow;

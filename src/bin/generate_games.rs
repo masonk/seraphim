@@ -27,12 +27,11 @@ use std::result::Result;
 
 use fs2::FileExt;
 
-static MODEL_DIR_PREFIX: &'static str = "src/tictactoe/models";
-static GAME_DATA: &'static str = "src/tictactoe/gamedata";
-static CONTROL_FILE: &'static str = "src/tictactoe/gamedata/control";
 static DEFAULT_GAMES_PER_FILE: i64 = 1000;
 static DEFAULT_MAX_FILES: i64 = 50;
-static FILE_NAME_TEMPLATE: &'static str = "src/tictactoe/gamedata/batch-{:07}";
+static DEFAULT_OUTPUT_DIR: &'static str = "src/tictactoe/gamedata";
+static CONTROL_FILE: &'static str = "control";
+static MODEL_DIR_PREFIX: &'static str = "src/tictactoe/models";
 
 fn init_logger() {
     flexi_logger::Logger::with_env()
@@ -49,6 +48,10 @@ fn main() {
                             .arg(Arg::with_name("model_dir")
                                 .help("The name of a directory under src/tictactoe/models")
                                 .required(true))
+                            .arg(Arg::with_name("output_dir")
+                                .help("Where does the generated data go")
+                                .long("output_dir")
+                                .takes_value(true))
                             .arg(Arg::with_name("games_per_file")
                                 .help("How many games in each .tfrecord file")
                                 .long("games_per_file")
@@ -72,6 +75,7 @@ fn main() {
         .value_of("max_files")
         .and_then(|v| v.parse::<i64>().ok())
         .unwrap_or(DEFAULT_MAX_FILES);
+    let output_dir = matches.value_of("output_dir").unwrap_or(DEFAULT_OUTPUT_DIR);
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -83,11 +87,11 @@ fn main() {
     let mut count = 0;
 
     'outer: while running.load(Ordering::SeqCst) {
-        ::std::fs::create_dir_all("src/tictactoe/gamedata").unwrap();
+        ::std::fs::create_dir_all(&output_dir).unwrap();
 
-        let next_id = get_next_file_id().unwrap();
+        let next_id = get_next_file_id(&output_dir).unwrap();
         println!("{}", next_id);
-        let next_file_path = format!("src/tictactoe/gamedata/batch-{:07}", next_id);
+        let next_file_path = format!("{}/batch-{:07}", output_dir, next_id);
         let lock_path = format!(
             "{}/{}/{}/{}",
             MODEL_DIR_PREFIX, model_dir, "champion", "lock"
@@ -124,7 +128,7 @@ fn main() {
             .write(true)
             .create(true)
             .append(true)
-            .open("src/tictactoe/gamedata/stale_file_paths")
+            .open(&format!("{}/stale_file_paths", output_dir))
             .unwrap();
 
         stale_index.lock_exclusive().unwrap();
@@ -137,7 +141,8 @@ fn main() {
         if next_id - max_files >= 0 {
             stale_index
                 .write_fmt(format_args!(
-                    "src/tictactoe/gamedata/batch-{:07}.tfrecord\n",
+                    "{}/batch-{:07}.tfrecord\n",
+                    output_dir,
                     next_id - max_files
                 ))
                 .unwrap();
@@ -149,12 +154,12 @@ fn main() {
     println!("saved {} games", count);
 }
 
-fn get_next_file_id() -> io::Result<i64> {
+fn get_next_file_id(output_dir: &str) -> io::Result<i64> {
     let mut control = ::std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .read(true)
-        .open(CONTROL_FILE)?;
+        .open(&format!("{}/{}", output_dir, CONTROL_FILE))?;
 
     let mut buf = Vec::new();
     control.read_to_end(&mut buf)?;

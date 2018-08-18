@@ -68,8 +68,8 @@ args = parser.parse_args()
 model_dir = "src/tictactoe/models/" + args.name + "/"
 
 # save a new SavedModel to compete in the eternal tournament after running through this many epochs of training
-snapshot_epochs = 1000
-minibatch_size = 512
+snapshot_epochs = 500
+minibatch_size = 256
 
 # take training examples (stored in TFRecord format) from files in this directory:
 dataset_dir = "src/tictactoe/gamedata"
@@ -93,6 +93,7 @@ def make_dataset(minibatch, dataset_dir):
         except:
             None
         files = glob.glob("{}/*.tfrecord".format(dataset_dir))
+        print(files)
         fcntl.flock(stale_files, fcntl.LOCK_UN)
     except:
         None
@@ -140,44 +141,52 @@ def save_savedmodel(sess, snapshot_dir):
     example = tf.get_collection("example")[0]
     label = tf.get_collection("label")[0]
     softmax = tf.get_collection('softmax')[0]
+    logits = tf.get_collection("logits")[0]
+
     savedmodel_dir = snapshot_dir + "/saved_model"
 
     lock = open(snapshot_dir + "/lock", 'w+')
     fcntl.flock(lock, fcntl.LOCK_EX)
     shutil.rmtree(savedmodel_dir, ignore_errors=True)
+    
+    tf.saved_model.simple_save(sess,
+            savedmodel_dir,
+            inputs={"example": example},
+            outputs={"softmax": softmax, "logits": logits})
 
-    builder = tf.saved_model.builder.SavedModelBuilder(savedmodel_dir)
-    training_inputs = {
-        "example": build_tensor_info(example),
-        "label": build_tensor_info(label)
-    }
-    serving_inputs = {
-        "example": build_tensor_info(example)
-    }
-    signature_outputs = {
-        "softmax": build_tensor_info(softmax)
-    }
+    fcntl.flock(lock, fcntl.LOCK_UN)
 
-    training_signature_def = build_signature_def(
-        training_inputs, signature_outputs,
-        REGRESS_METHOD_NAME)
+    # builder = tf.saved_model.builder.SavedModelBuilder(savedmodel_dir)
+    # training_inputs = {
+    #     "example": build_tensor_info(example),
+    #     "label": build_tensor_info(label)
+    # }
+    # serving_inputs = {
+    #     "example": build_tensor_info(example)
+    # }
+    # signature_outputs = {
+    #     "softmax": build_tensor_info(softmax)
+    # }
 
-    serving_signature_def = build_signature_def(
-        serving_inputs, signature_outputs, PREDICT_METHOD_NAME
-    )
+    # training_signature_def = build_signature_def(
+    #     training_inputs, signature_outputs,
+    #     REGRESS_METHOD_NAME)
 
-    builder.add_meta_graph_and_variables(sess,
-        [TRAINING, SERVING],
-        signature_def_map={ REGRESS_METHOD_NAME: training_signature_def},
-        strip_default_attrs=True)
+    # serving_signature_def = build_signature_def(
+    #     serving_inputs, signature_outputs, PREDICT_METHOD_NAME
+    # )
 
-    # builder.add_meta_graph(sess,
+    # builder.add_meta_graph_and_variables(sess,
+    #     [TRAINING, SERVING],
+    #     signature_def_map={ REGRESS_METHOD_NAME: training_signature_def},
+    #     strip_default_attrs=True)
+
+    # builder.add_meta_graph(sess,``
     #     [SERVING],
     #     signature_def_map={ PREDICT_METHOD_NAME: serving_inputs },
     #     strip_default_attrs=True)
-    builder.save(as_text=False)
+    # builder.save(as_text=False)
     
-    fcntl.flock(lock, fcntl.LOCK_UN)
 
 def train(sess):
     saver_dir = model_dir + "champion/checkpoints/"
@@ -200,7 +209,6 @@ def train(sess):
         while True:
             if got_sigint():
                 break
-
             dataset = make_dataset(minibatch_size, dataset_dir)
             iterator = dataset.make_initializable_iterator()
             example_it, label_it = iterator.get_next()
@@ -219,9 +227,12 @@ def train(sess):
                         break
                     if minibatch % 1000 == 0:
                         saver.save(sess, saver_prefix, global_step)
+                print("epoch {}".format(epoch))
                 epoch += 1
+                if got_sigint():
+                    break
 
-            # print("EPOCH {} FINISHED ({} minibatches of {} examples)".format(epoch, minibatch, minibatch_size))
+            print("EPOCH {} FINISHED ({} minibatches of {} examples)".format(epoch, minibatch, minibatch_size))
             take_snapshot(sess, saver, global_step, "champion")                
             take_snapshot(sess, saver, global_step)
 
@@ -241,12 +252,13 @@ def init_model(sess):
     dense2 = tf.layers.dense(dense1, units=92, activation=tf.nn.relu, name="dense2")
     logits = tf.layers.dense(dense2, units=9, activation=tf.nn.relu, name="logits")
     softmax = tf.nn.softmax(logits, name='softmax')
+    tf.add_to_collection('logits', logits)
     tf.add_to_collection('softmax', softmax)
     global_step = tf.Variable(0, name='global_step', trainable=False)
     tf.add_to_collection('global_step', global_step)
 
-    loss = tf.losses.mean_squared_error(labels=label, predictions=softmax)
-    optimizer = tf.train.AdamOptimizer(.01)
+    loss = tf.losses.mean_squared_error(labels=label, predictions=logits)
+    optimizer = tf.train.AdagradOptimizer(.01)
 
     train = optimizer.minimize(loss, name='train', global_step=global_step)
     tf.add_to_collection('train', train)
