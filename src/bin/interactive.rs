@@ -2,13 +2,11 @@ extern crate clap;
 extern crate ctrlc;
 extern crate fs2;
 
-use seraphim::search;
-
-use clap::{App, Arg, SubCommand};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use clap::{App, Arg};
 use fs2::FileExt;
 use std::fs::File;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 extern crate seraphim;
 static MODEL_DIR_PREFIX: &'static str = "src/tictactoe/models";
@@ -39,13 +37,13 @@ fn start_game(debug: bool, model_dir: String) {
     );
     let lock = File::open(lock_path).unwrap();
     lock.lock_shared().unwrap();
-    let mut ge = match seraphim::tictactoe::DnnGameExpert::from_saved_model(&fq_model_dir) {
+    let ge = match seraphim::tictactoe::DnnGameExpert::from_saved_model(&fq_model_dir) {
         Ok(ge) => ge,
         Err(e) => {
             panic!("Couldn't restore a model from '{}'. \nTry running 'src/tictactoe/init.py {}'\nError:\n{:?}", fq_model_dir, model_dir,  e);
         }
     };
-    lock.unlock();
+    lock.unlock().unwrap();
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
 
@@ -53,8 +51,9 @@ fn start_game(debug: bool, model_dir: String) {
         r.store(false, Ordering::SeqCst);
     }).expect("Error setting Ctrl-C handler");
 
-    let mut session = seraphim::evaluation::interactive::InteractiveSession::new(ge, seraphim::tictactoe::State::new());
+    let mut session = seraphim::evaluation::interactive::InteractiveSession::new(
+        ge,
+        seraphim::tictactoe::State::new(),
+    );
     session.start_game(running)
-
-    
 }

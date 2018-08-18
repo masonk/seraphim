@@ -481,8 +481,7 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
                 .run(&mut inference_step)
                 .expect("failed to run inference step");
 
-            let inferences: tf::Tensor<f32> =
-                inference_step.fetch(softmax_output_token).unwrap();
+            let inferences: tf::Tensor<f32> = inference_step.fetch(softmax_output_token).unwrap();
             debug!("raw inferences:");
             for i in 0..3 {
                 let o = i * 3;

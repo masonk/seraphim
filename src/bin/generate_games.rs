@@ -32,6 +32,8 @@ static GAME_DATA: &'static str = "src/tictactoe/gamedata";
 static CONTROL_FILE: &'static str = "src/tictactoe/gamedata/control";
 static DEFAULT_GAMES_PER_FILE: i64 = 1000;
 static DEFAULT_MAX_FILES: i64 = 50;
+static FILE_NAME_TEMPLATE: &'static str = "src/tictactoe/gamedata/batch-{:07}";
+
 fn init_logger() {
     flexi_logger::Logger::with_env()
         .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
@@ -85,13 +87,13 @@ fn main() {
 
         let next_id = get_next_file_id().unwrap();
         println!("{}", next_id);
-        let next_file_path = format!("src/tictactoe/gamedata/batch-{}", next_id);
+        let next_file_path = format!("src/tictactoe/gamedata/batch-{:07}", next_id);
         let lock_path = format!(
             "{}/{}/{}/{}",
             MODEL_DIR_PREFIX, model_dir, "champion", "lock"
         );
         let lock = File::open(lock_path).unwrap();
-        lock.lock_shared().unwrap();
+        lock.lock_exclusive().unwrap();
 
         let file = ::std::fs::OpenOptions::new()
             .write(true)
@@ -116,21 +118,32 @@ fn main() {
                 break;
             }
         }
+        // changing files in gamedata is potentially racing with training processes that are reading
+        // .tfrecord files.
+        let mut stale_index = ::std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .append(true)
+            .open("src/tictactoe/gamedata/stale_file_paths")
+            .unwrap();
+
+        stale_index.lock_exclusive().unwrap();
+
         std::fs::rename(
             next_file_path.clone(),
             format!("{}.tfrecord", next_file_path),
         ).unwrap();
-        if next_id - max_files >= 0 {
-            let lock = File::open("src/tictactoe/gamedata/lock").unwrap();
-            lock.lock_exclusive().unwrap();
 
-            let stale = format!(
-                "src/tictactoe/gamedata/batch-{}.tfrecord",
-                next_id - max_files
-            );
-            ::std::fs::remove_file(stale);
-            lock.unlock().unwrap();
+        if next_id - max_files >= 0 {
+            stale_index
+                .write_fmt(format_args!(
+                    "src/tictactoe/gamedata/batch-{:07}.tfrecord\n",
+                    next_id - max_files
+                ))
+                .unwrap();
         }
+        stale_index.unlock().unwrap();
+        lock.unlock().unwrap();
     }
 
     println!("saved {} games", count);

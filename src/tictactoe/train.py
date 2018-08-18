@@ -68,19 +68,35 @@ args = parser.parse_args()
 model_dir = "src/tictactoe/models/" + args.name + "/"
 
 # save a new SavedModel to compete in the eternal tournament after running through this many epochs of training
-snapshot_epochs = 10
-minibatch_size = 128
+snapshot_epochs = 1000
+minibatch_size = 512
 
 # take training examples (stored in TFRecord format) from files in this directory:
 dataset_dir = "src/tictactoe/gamedata"
 
+def clean_up_stale_files(stale_files):
+    for path in stale_files:
+        try:
+            os.remove(path.strip())
+        except:
+            None
+
 def make_dataset(minibatch, dataset_dir):
+    stale_files_path = dataset_dir + "/stale_file_paths"
+    files = []
+    try:
+        stale_files = open(stale_files_path, 'r')
+        fcntl.flock(stale_files, fcntl.LOCK_EX)
+        clean_up_stale_files(stale_files)
+        try:
+            os.remove(stale_files_path)
+        except:
+            None
+        files = glob.glob("{}/*.tfrecord".format(dataset_dir))
+        fcntl.flock(stale_files, fcntl.LOCK_UN)
+    except:
+        None
 
-    lock = open(dataset_dir + "/lock", 'w+')
-    fcntl.flock(lock, fcntl.LOCK_SH)
-
-    files = glob.glob("{}/*.tfrecord".format(dataset_dir))
-    # print(files)
     dataset = tf.data.TFRecordDataset(files)
     dataset = dataset.map(parse)
 
@@ -89,7 +105,6 @@ def make_dataset(minibatch, dataset_dir):
     dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(minibatch_size))
     # dataset = dataset.batch(minibatch, drop_remainder=True) # v1.10?
     
-    fcntl.flock(lock, fcntl.LOCK_UN)
     return dataset
 
 def parse(bytes):
@@ -206,7 +221,7 @@ def train(sess):
                         saver.save(sess, saver_prefix, global_step)
                 epoch += 1
 
-            print("EPOCH {} FINISHED ({} minibatches of {} examples)".format(epoch, minibatch, minibatch_size))
+            # print("EPOCH {} FINISHED ({} minibatches of {} examples)".format(epoch, minibatch, minibatch_size))
             take_snapshot(sess, saver, global_step, "champion")                
             take_snapshot(sess, saver, global_step)
 
