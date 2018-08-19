@@ -77,5 +77,5 @@ fn start_game(debug: bool, model_dir: String, exploration_coefficient: f32) {
         seraphim::tictactoe::State::new(),
         options,
     );
-    session.start_game(running)
+    session.start_debug(running)
 }

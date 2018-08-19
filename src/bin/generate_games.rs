@@ -60,6 +60,11 @@ fn main() {
                                 .help("How many .tfrecord files to keep")
                                 .long("max_files")
                                 .takes_value(true))
+                             .arg(Arg::with_name("exploration_coefficient")
+                                .help("A coefficient that controls how tree search should balance the tradeoff between exploiting good moves and exploring undersampled moves. Try somewhere in the range of [0.1, 10]")
+                                .long("exploration_coefficient")
+                                .short("c")
+                                .takes_value(true))
                             .get_matches();
 
     let model_dir = matches.value_of("model_dir").unwrap();
@@ -76,6 +81,10 @@ fn main() {
         .and_then(|v| v.parse::<i64>().ok())
         .unwrap_or(DEFAULT_MAX_FILES);
     let output_dir = matches.value_of("output_dir").unwrap_or(DEFAULT_OUTPUT_DIR);
+    let exploration_coefficient = matches
+        .value_of("exploration_coefficient")
+        .and_then(|c| c.parse::<f32>().ok())
+        .unwrap_or(5.0);
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -115,7 +124,13 @@ fn main() {
             }
         };
         lock.unlock();
-        match do_some_games(&mut ge, games_per_file, writer, running.clone()) {
+        match do_some_games(
+            &mut ge,
+            games_per_file,
+            writer,
+            exploration_coefficient,
+            running.clone(),
+        ) {
             Ok(c) => count += c,
             Err(err) => {
                 println!("{:?}", err);
@@ -181,13 +196,14 @@ fn do_some_games<W: Write>(
     ge: &mut seraphim::tictactoe::DnnGameExpert,
     num: i64,
     mut writer: W,
+    exploration_coefficient: f32,
     running: Arc<AtomicBool>,
 ) -> Result<i64, io::Error> {
     let mut count = 0;
     let mut options = search::SearchTreeOptions::defaults();
     options.readouts = 1500;
-    options.tempering_point = 2;
-    options.cpuct = 1.5;
+    options.tempering_point = 1;
+    options.cpuct = exploration_coefficient;
 
     while count < num {
         if !running.load(Ordering::SeqCst) {

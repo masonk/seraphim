@@ -1,4 +1,4 @@
-//! This module implements informed Monte Carlo tree search. "Informed" means that the search is guided by an expert policy 
+//! This module implements informed Monte Carlo tree search. "Informed" means that the search is guided by an expert policy
 //! that ascribes Bayesian prior probabilities to question of whether each possible next action is the best one.
 //! Consumers of the Seraphim library are to implement the GameExpert trait, and pass an instance of GameExpert
 //! to SearchTree.
@@ -21,21 +21,27 @@ pub struct Hypotheses<Action> {
 }
 
 #[derive(Debug)]
-pub struct CandidateActionDebugInformation {
+pub struct CandidateActionDebugInformation<Action>
+where
+    Action: self::Action,
+{
+    pub action: Action,
     pub prior: f32,               // The naive probability that this move is the best
     pub posterior: f32, // The improved probability that this move is the best after PUCT search
     pub total_visits: u32, // how many times has this line of play been sampled, in total
     pub visits_in_last_read: u32, // how many times was this line of play sampled in the most recent read
     pub average_value: f32,       // The average value of taking this action Q(s, a) in the paper
     pub total_value: f32,         // W(s, a) in the paper
+    pub exploration_stimulus: f32, // How badly does the search tree want to explore this action in the future?
+                                   // The highest value of here is the node it would sample next if asked to perform more readouts.
 }
 
 #[derive(Debug)]
 pub struct SearchResultsDebugInfo<Action>
 where
-    Action: ::std::hash::Hash + ::std::cmp::Eq,
+    Action: self::Action,
 {
-    pub candidates: HashMap<Action, CandidateActionDebugInformation>, // how many visits does each child node have
+    pub candidates: Vec<CandidateActionDebugInformation<Action>>,
     pub results: SearchResultsInfo<Action>,
     pub hot: bool, // Was this move chosen from a cold or hot sample. Hot introduces noise early in the game to ensure game variety.
 }
@@ -43,10 +49,12 @@ where
 #[derive(Debug)]
 pub struct SearchResultsInfo<Action>
 where
-    Action: ::std::hash::Hash + ::std::cmp::Eq,
+    Action: self::Action,
 {
     pub results: Vec<f32>, // the improved probabitly estimates after searching. These probabilities will be in the same order as the input hypotheses.
+    // Results are returned in the same order as the actions received as input from the GameExpert.
     pub selection: Action, // which move did the engine select
+    pub application_token: ApplicationToken,
 }
 
 pub trait State:
@@ -64,8 +72,8 @@ pub trait Action:
     + ::std::fmt::Debug
 {
 }
-// The expert that guides the MCTS search is abstracted by the GameExpert trait, which users of this library are to implement.  
-// The GameExpert knows the rules of the game it's playing, and also has bayesian prior beliefs about which moves are best to 
+// The expert that guides the MCTS search is abstracted by the GameExpert trait, which users of this library are to implement.
+// The GameExpert knows the rules of the game it's playing, and also has bayesian prior beliefs about which moves are best to
 // play and the probability that the next player will ultimately win the game. The search algorithm implemented by the SearchTree
 // crucially depends on the accuracy of the expert's prior beliefs for its efficiency.
 pub trait GameExpert<State, Action>
@@ -95,6 +103,10 @@ where
 
 type NodeIdx = petgraph::graph::NodeIndex<petgraph::graph::DefaultIx>;
 type EdgeIdx = petgraph::graph::EdgeIndex<petgraph::graph::DefaultIx>;
+
+// An opaque token which can be efficient 'applied' to search tree to advance the root of the tree to the next node
+#[derive(Debug)]
+pub struct ApplicationToken(NodeIdx);
 
 #[derive(Debug, Clone)]
 struct Edge<Action>
@@ -130,10 +142,10 @@ where
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SearchTreeOptions {
-    pub cpuct: f32,           // a constant determining the tradeoff between exploration and exploitation; .25 in the AGZ paper. 
-                              // Higher numbers bias the search towards less-explored nodes, lower numbers bias the search 
-                              // towards more promising nodes.
-    pub readouts: u32,        // How many games to play when searching for a single move; 1600 in the AGZ paper.
+    pub cpuct: f32, // a constant determining the tradeoff between exploration and exploitation; .25 in the AGZ paper.
+    // Higher numbers bias the search towards less-explored nodes, lower numbers bias the search
+    // towards more promising nodes.
+    pub readouts: u32, // How many games to play when searching for a single move; 1600 in the AGZ paper.
     pub tempering_point: u32, // how many plys should progress until we lower the temperature of move selection from 1
                               // to ~0. 30 in the AGZ paper
 }
@@ -187,9 +199,9 @@ where
         &self.search_tree[self.root_idx].state
     }
 
-    // perform search for one move, returning detailed information about the result of the search
-    // This function is meant for interactive applications such as debugging or teaching modes
-    pub fn read_and_apply_debug(
+    // Read the next move and return the result without applying.
+    // Note: This call will typically be followed by apply() or apply_search_results()
+    pub fn read_debug(
         &mut self,
         game_expert: &mut GameExpert<State, Action>,
     ) -> SearchResultsDebugInfo<Action> {
@@ -216,24 +228,28 @@ where
 
         let total_visit_count: u32 = child_edges.iter().map(|e| e.visit_count).sum();
 
-        let mut candidates: HashMap<Action, CandidateActionDebugInformation> = HashMap::new();
-        for edge in child_edges {
-            let pre_read_visit_count = pre_read_edge_map.get(&edge.action).map(|e| e.visit_count).unwrap_or(0);
-
-            candidates.insert(
-                edge.action,
+        let mut candidates: Vec<CandidateActionDebugInformation<Action>> = Vec::with_capacity(child_edges.len());
+        for edge in child_edges.iter().rev() { // reversing because the regular graph enumerate is LIFO and we want FIFO
+            let pre_read_visit_count = pre_read_edge_map
+                .get(&edge.action)
+                .map(|e| e.visit_count)
+                .unwrap_or(0);
+            let stimulus = self.exploration_stimulus(&edge, total_visit_count);
+            candidates.push(
                 CandidateActionDebugInformation {
+                    action: edge.action.clone(),
                     prior: edge.prior,
                     posterior: (edge.visit_count as f32) / (total_visit_count as f32),
                     total_visits: edge.visit_count,
                     visits_in_last_read: edge.visit_count - pre_read_visit_count,
                     average_value: edge.average_value,
                     total_value: edge.total_value,
+                    exploration_stimulus: stimulus,
                 },
             );
         }
         let hot = self.ply < self.options.tempering_point;
-        let results = self.select_and_apply();
+        let results = self.select();
         SearchResultsDebugInfo {
             results,
             hot,
@@ -241,14 +257,26 @@ where
         }
     }
 
-    // perform search for one move, returning training information about the result of the search
-    // This function is meant for generating games of self-play
-    pub fn read_and_apply(
+    pub fn read(
         &mut self,
         game_expert: &mut GameExpert<State, Action>,
     ) -> SearchResultsInfo<Action> {
         self.readout(game_expert);
-        self.select_and_apply()
+        self.select()
+    }
+    pub fn apply_search_results(&mut self, result: &SearchResultsInfo<Action>) {
+        self.advance_to_node(result.application_token.0);
+    }
+
+    // update the search tree by applying an action.
+    pub fn apply(&mut self, action: &Action) {
+        let next_node_idx = self.search_tree
+            .neighbors(self.root_idx)
+            .find(|node_idx| {
+                &self.search_tree[self.parent_edge_idx(*node_idx).unwrap()].action == action
+            })
+            .unwrap();
+        self.advance_to_node(next_node_idx);
     }
 
     fn readout(&mut self, game_expert: &mut GameExpert<State, Action>) {
@@ -256,11 +284,10 @@ where
             self.read_to_end(self.root_idx, game_expert);
         }
     }
-
     // After visitation is done, it's time to select the next action that will actually be played.
     // The AGZ algorithm uses tempering. Before tempering, it selects the next action with probability proportional to visit counts.
     // After tempering, it just choses the next action with the highest count.
-    fn select_and_apply(&mut self) -> SearchResultsInfo<Action> {
+    fn select(&mut self) -> SearchResultsInfo<Action> {
         /*
         Read the board by playing out a number of games according to the PUCB MCTS algorithm.
 
@@ -317,12 +344,11 @@ where
                     cum_prob += results[i];
                     if cum_prob > rand {
                         let selection = edge.action.clone();
-                        unsafe {
-                            (*self_ptr).ply += 1;
-                            (*self_ptr).root_idx = *node_idx; // TODO: Remove all nodes that are made unreachable due to advancing down the tree.
-                        }
-
-                        return SearchResultsInfo { results, selection };
+                        return SearchResultsInfo {
+                            results,
+                            selection,
+                            application_token: ApplicationToken(*node_idx),
+                        };
                     }
                 }
             } else {
@@ -330,28 +356,23 @@ where
                     .iter()
                     .max_by_key(|(e, _)| e.visit_count)
                     .unwrap();
-                unsafe {
-                    (*self_ptr).ply += 1;
-                    (*self_ptr).root_idx = *selected_node;
-                }
+
                 let selection = selected_edge.action.clone();
-                return SearchResultsInfo { results, selection };
+                return SearchResultsInfo {
+                    results,
+                    selection,
+                    application_token: ApplicationToken(*selected_node),
+                };
             }
         }
     }
 
-    // update the search tree by applying an action.
-    pub fn apply(&mut self, action: &Action) {
-        let next_node_idx = self.search_tree
-            .neighbors(self.root_idx)
-            .find(|node_idx| {
-                &self.search_tree[self.parent_edge_idx(*node_idx).unwrap()].action == action
-            })
-            .unwrap();
+
+    fn advance_to_node(&mut self, node: NodeIdx) {
         self.ply += 1;
-        self.root_idx = next_node_idx;
-        // TODO: delete all nodes and edges that are not reachable from root
+        self.root_idx = node; // TODO: Remove all nodes that are made unreachable due to advancing down the tree.
     }
+
     // recursively follow the search to a terminal node (A node where GameStatus is not InProgress),
     // then back up the tree, updating edge weights.f
     fn read_to_end(&mut self, node_idx: NodeIdx, game_expert: &mut GameExpert<State, Action>) {
@@ -382,25 +403,30 @@ where
         }
     }
 
+    /* 
+        The next node to sample is the node that maximizes
+        exploration_stimulus = Q(s, a) + U(s, a)
+
+        where
+
+        U(s, a) = cP(s,a)sqrt(Nb)/(1 + Na)
+
+        Q(s, a) is the average reward for exploring that node in the past. It is equal to wins/nb 
+
+        P is the prior probability that the action   is the best
+        Na is the number of visits of to this edge,
+        Nb is the number of visits to the parent edge,
+        c is "a constant determining the level of exploration".
+    */
+    fn exploration_stimulus(&self, edge: &Edge<Action>, parent_visits: u32) -> f32 {
+        self.options.cpuct * edge.prior * f32::sqrt(parent_visits as f32)
+            / ((1 + edge.visit_count) as f32) + edge.average_value
+    }
     fn select_next_node(
         &self,
         idx: NodeIdx,
         game_expert: &mut GameExpert<State, Action>,
     ) -> NodeIdx {
-        /* in the AGZ paper
-            The next node is the node with a that maximizes
-            Q(s, a) + U(s, a)
-            
-            where
-
-            U(s, a) = cP(s,a)sqrt(Nb)/(1 + Na)
-
-            Na is the number of visits of to this edge,
-            Nb is the number of visits to the parent edge,
-            c is "a constant determining the level of exploration".
-
-        */
-
         let n_b: u32 = self.search_tree
             .neighbors(idx)
             .map(|child_idx| self.parent_edge_idx(child_idx).unwrap())
@@ -457,18 +483,17 @@ where
             .neighbors(idx)
             .map(|node_idx| {
                 let edge_idx = self.parent_edge_idx(node_idx).unwrap();
-
                 let edge = &self.search_tree[edge_idx];
-                let puct = self.options.cpuct * edge.prior * f32::sqrt(n_b as f32)
-                    / ((1 + edge.visit_count) as f32)
-                    + edge.average_value;
-                (edge_idx, puct)
+                let exploration_stimulus = self.exploration_stimulus(&edge, n_b);
+                (edge_idx, exploration_stimulus)
             })
-            .max_by(|&(_, puct_a), &(_, puct_b)| {
-                puct_a
-                    .partial_cmp(&puct_b)
-                    .unwrap_or(::std::cmp::Ordering::Equal)
-            })
+            .max_by(
+                |&(_, exploration_stimulus_a), &(_, exploration_stimulus_b)| {
+                    exploration_stimulus_a
+                        .partial_cmp(&exploration_stimulus_b)
+                        .unwrap_or(::std::cmp::Ordering::Equal)
+                },
+            )
             .unwrap();
 
         let (_, next_node_idx) = self.search_tree.edge_endpoints(next_edge_idx).unwrap();
@@ -543,7 +568,7 @@ where
                             prior,
                             visit_count: 0,
                             total_value: 0.0,
-                            average_value: 0.0,
+                            average_value: 0.5,
                         },
                     );
                 }

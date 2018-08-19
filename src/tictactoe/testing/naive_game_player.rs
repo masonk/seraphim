@@ -75,7 +75,8 @@ mod test {
                 let mut search = search::SearchTree::init_with_options(State::new(), options);
                 loop {
                     if let GameStatus::InProgress = game.status {
-                        let next = search.read_and_apply(&mut game_expert);
+                        let results = search.read(&mut game_expert);
+                        searcher.apply_results(&results);
                         game.play(next).unwrap();
                     } else {
                         if game.status == GameStatus::TerminatedWithoutResult {

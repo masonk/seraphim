@@ -68,9 +68,9 @@ args = parser.parse_args()
 model_dir = "src/tictactoe/models/" + args.name + "/"
 
 # save a new SavedModel to compete in the eternal tournament after running through this many epochs of training
-snapshot_epochs = 500
-minibatch_size = 256
-
+snapshot_epochs = 250
+minibatch_size = 2048
+dense_layers = 10
 # take training examples (stored in TFRecord format) from files in this directory:
 dataset_dir = "src/tictactoe/gamedata"
 
@@ -84,19 +84,22 @@ def clean_up_stale_files(stale_files):
 def make_dataset(minibatch, dataset_dir):
     stale_files_path = dataset_dir + "/stale_file_paths"
     files = []
+    stale_files = None
     try:
         stale_files = open(stale_files_path, 'r')
         fcntl.flock(stale_files, fcntl.LOCK_EX)
         clean_up_stale_files(stale_files)
-        try:
-            os.remove(stale_files_path)
-        except:
-            None
-        files = glob.glob("{}/*.tfrecord".format(dataset_dir))
-        print(files)
-        fcntl.flock(stale_files, fcntl.LOCK_UN)
+        os.remove(stale_files_path)
     except:
         None
+    finally:
+        files = glob.glob("{}/*.tfrecord".format(dataset_dir))
+        print(files)
+        try:
+            fcntl.flock(stale_files, fcntl.LOCK_UN)
+        except Exception as e:
+            print(e)
+
 
     dataset = tf.data.TFRecordDataset(files)
     dataset = dataset.map(parse)
@@ -186,7 +189,6 @@ def save_savedmodel(sess, snapshot_dir):
     #     signature_def_map={ PREDICT_METHOD_NAME: serving_inputs },
     #     strip_default_attrs=True)
     # builder.save(as_text=False)
-    
 
 def train(sess):
     saver_dir = model_dir + "champion/checkpoints/"
@@ -197,6 +199,7 @@ def train(sess):
     saver.restore(sess, latest_checkpoint)
     print("{}".format(latest_checkpoint))
     example_ph = tf.get_collection('example')[0]
+    training_ph = tf.get_collection('training')[0]
     label_ph = tf.get_collection('label')[0]
     train_op = tf.get_collection('train_op')[0]
     global_step = tf.get_collection('global_step')[0]
@@ -221,7 +224,7 @@ def train(sess):
                     try:
                         e = sess.run(example_it)
                         l = sess.run(label_it)
-                        sess.run(train_op, feed_dict={example_ph: e, label_ph: l})
+                        sess.run(train_op, feed_dict={example_ph: e, label_ph: l, training_ph: False})
 
                     except tf.errors.OutOfRangeError:
                         break
@@ -244,20 +247,25 @@ def init_model(sess):
 
     example = tf.placeholder(tf.uint8, name='example', shape=(None, 19))
     label = tf.placeholder(tf.float32, name='label', shape=(None, 9))
+    training = tf.placeholder(tf.bool, name='training', shape=()) # true during training, false during inference
 
     tf.add_to_collection("example", example)
     tf.add_to_collection("label", label)
+    tf.add_to_collection("training", training)
+    dense = tf.layers.dense(tf.cast(example, tf.float32), units=128, activation=tf.nn.relu)
 
-    dense1 = tf.layers.dense(tf.cast(example, tf.float32), units=128, activation=tf.nn.relu, name="dense1")
-    dense2 = tf.layers.dense(dense1, units=92, activation=tf.nn.relu, name="dense2")
-    logits = tf.layers.dense(dense2, units=9, activation=tf.nn.relu, name="logits")
+    for i in range(dense_layers):
+        batch_norm = tf.layers.batch_normalization(dense, training=training, renorm=True, trainable=True)
+        dense = tf.layers.dense(batch_norm, units=92, activation=tf.nn.relu)
+
+    logits = tf.layers.dense(dense, units=9, activation=tf.nn.relu, name="logits")
     softmax = tf.nn.softmax(logits, name='softmax')
     tf.add_to_collection('logits', logits)
     tf.add_to_collection('softmax', softmax)
     global_step = tf.Variable(0, name='global_step', trainable=False)
     tf.add_to_collection('global_step', global_step)
 
-    loss = tf.losses.mean_squared_error(labels=label, predictions=logits)
+    loss = tf.losses.mean_squared_error(labels=label, predictions=softmax)
     optimizer = tf.train.AdagradOptimizer(.01)
 
     train = optimizer.minimize(loss, name='train', global_step=global_step)
@@ -277,7 +285,6 @@ def init_model(sess):
     #     graph.add_to_collection(key, self)
     take_snapshot(sess, saver, global_step, "champion")
     take_snapshot(sess, saver, global_step)
-
 
 class catch_sigint(object):
     def __init__(self):

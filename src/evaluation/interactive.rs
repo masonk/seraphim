@@ -125,6 +125,61 @@ where
         &self.current_state
     }
 
+    fn prompt_next_action_debug_info(debug_info: &search::SearchResultsDebugInfo<Action>) -> &Action {
+        loop {
+            let mut input = String::new();
+            io::stdin().read_line(&mut input);
+            let trimmed = input.trim();
+            if trimmed == "q" {
+                panic!("quit");
+            }
+            if trimmed == "" {
+                return &debug_info.results.selection;
+            }
+            let parse = trimmed.parse::<usize>();
+            if let Ok(selection) = parse {
+                return &debug_info.candidates[selection].action;
+            } else {
+                if let Err(e) = parse {
+                    println!("{:?}", e);
+                }
+            }
+            println!("Expected an integer, empty line, or \"q\"");
+        }
+    }
+    
+    pub fn start_debug(&mut self, running: Arc<AtomicBool>) {
+        'outer: while running.load(Ordering::SeqCst) {
+            if let search::GameStatus::InProgress = self.current_state.status() {
+                println!("{}", self.current_state);
+                println!("{:?}", self.next_player);
+                let debug = &self.searcher.read_debug(&mut self.expert);
+                for (i, info) in debug.candidates.iter().enumerate() {
+                    println!("{}", self.show_action_info(i, info));
+                }
+                let hot = if debug.hot { "HOT" } else { "COLD " };
+                println!("Temperature is {}", hot);
+                println!("Computer would play {}. Press enter to play that. Enter an integer of different action to play that. q quits.", debug.results.selection);
+
+                let next_action = Self::prompt_next_action_debug_info(&debug);
+
+                self.searcher.apply(&next_action);
+                self.current_state = self.searcher.current_state_ref().clone();
+                self.next_player = self.next_player.other();
+            } else {
+                println!("{}", self.current_state);
+                if self.current_state.status() == search::GameStatus::LastPlayerWon {
+                    println!("{:?} won", self.next_player.other());
+                } else if self.current_state.status() == search::GameStatus::LastPlayerLost {
+                    println!("{:?} won", self.next_player);
+                } else {
+                    println!("Draw.");
+                }
+
+                break;
+            }
+        }
+    }
     pub fn start_game(&mut self, running: Arc<AtomicBool>) {
         'outer: while running.load(Ordering::SeqCst) {
             if let search::GameStatus::InProgress = self.current_state.status() {
@@ -150,8 +205,7 @@ where
                     self.searcher.apply(next_action);
                     self.current_state = self.expert.next(&self.current_state, next_action);
                 } else {
-
-                    //     pub candidates: HashMap<Action, CandidateActionDebugInformation>, // how many visits does each child node have
+                    //     pub candidates: Vec<CandidateActionDebugInformation>, // how many visits does each child node have
                     //     pub results: SearchResultsInfo<Action>,
                     //     pub tempered: bool, // was tempering in effect for move selection
                     //     pub struct CandidateActionDebugInformation {
@@ -161,11 +215,21 @@ where
                     //     pub visits_in_last_read: u32, // how many times was this line of play sampled in the most recent read
                     //     pub average_value: f32,       // The average value of taking this action Q(s, a) in the paper
                     //     pub total_value: f32,         // W(s, a) in the paper
-                    let debug = &self.searcher.read_and_apply_debug(&mut self.expert);
-                    let temp = if debug.hot { "hot" } else { "cold" };
-                    println!("(temperature was {} for this search)", temp);
-                    for (action, info) in debug.candidates.iter() {
-                        println!("[{}] net: {} search: {} samples: {} value: {} total samples: {}", action, info.prior, info.posterior, info.visits_in_last_read, info.average_value, info.total_visits);
+                    let debug = &self.searcher.read_debug(&mut self.expert);
+                    self.searcher.apply_search_results(&debug.results);
+                    if debug.hot {
+                        println!("(temp was hot for this search)");
+                    }
+
+                    let prob_sum: f32 = debug.results.results.iter().sum();
+                    if prob_sum < 0.0 {
+                        println!(
+                            "missing net probability {} (ascribed to illegal moves?)",
+                            1.0 - prob_sum
+                        );
+                    }
+                    for (i, info) in debug.candidates.iter().enumerate() {
+                        println!("{}", self.show_action_info(i, info));
                     }
 
                     self.current_state = self.expert
@@ -190,6 +254,9 @@ where
                 break;
             }
         }
+    }
+    fn show_action_info(&self, idx: usize, info: &search::CandidateActionDebugInformation<Action>) -> String {
+        format!("[{}] action: {} net: {:0>6.4} search: {:0>6.4} samples: {:>5} value: {:0>7.5} total samples: {:>5} exploration_stimulus: {:0>7.5}", idx, info.action, info.prior, info.posterior, info.visits_in_last_read, info.average_value, info.total_visits, info.exploration_stimulus)
     }
     fn push_history(&mut self, _ply: Ply<Action, State>) {}
     pub fn get_next_action_interactive(

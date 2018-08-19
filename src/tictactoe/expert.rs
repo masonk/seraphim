@@ -47,15 +47,20 @@ impl DnnGameExpert {
         &mut self,
         mut searcher: search::SearchTree<State, usize>,
         dest: &mut W,
-    ) -> Result<State, TicTacToeError> {
-        let mut game = State::new();
+    ) -> Result<(), TicTacToeError> {
         let mut writer = io::tf::RecordWriter::new(dest);
         loop {
-            if let search::GameStatus::InProgress = game.status {
-                let results: search::SearchResultsInfo<usize> = searcher.read_and_apply(self);
-                let state_feature = Self::game_to_feature(&game);
+            if let search::GameStatus::InProgress = searcher.current_state_ref().status {
+                let results: search::SearchResultsInfo<usize> = searcher.read(self);
 
-                let mut choice_feature = Self::move_to_feature(results.results);
+                let mut posteriors = vec![0.0; 9];
+                for (i, p) in results.results.iter().enumerate() {
+                    posteriors[i] = *p;
+                }
+
+                let state_feature = Self::game_to_feature(searcher.current_state_ref());
+
+                let mut choice_feature = Self::move_to_feature(posteriors);
                 let mut features_map = HashMap::new();
 
                 // println!("From This Board Position:\n{}", game);
@@ -71,12 +76,12 @@ impl DnnGameExpert {
                 // println!("{:?}", example);
                 let proto_bytes = example.write_to_bytes().unwrap();
                 writer.write_one_record(&proto_bytes);
-                game.play(results.selection).unwrap();
+                searcher.apply_search_results(&results);
             } else {
                 break;
             }
         }
-        Ok(game)
+        Ok(())
     }
 
     fn state_tensor(state: &State) -> tf::Tensor<u8> {
@@ -218,12 +223,16 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
         debug!("{}", state);
         let example = self.graph.operation_by_name_required("example").unwrap();
         let softmax = self.graph.operation_by_name_required("softmax").unwrap();
-
+        let training = self.graph.operation_by_name_required("training").unwrap();
         let state_tensor = Self::state_tensor(state);
+        let mut training_tensor: tf::Tensor<bool> = tf::Tensor::new(&[]);
+        training_tensor[0] = false;
+
         let mut legal_actions: Vec<(usize, f32)> = vec![];
         {
             let mut inference_step = tf::SessionRunArgs::new();
             inference_step.add_feed(&example, 0, &state_tensor);
+            inference_step.add_feed(&training, 0, &training_tensor);
             let softmax_output_token = inference_step.request_fetch(&softmax, 0);
             let self_ptr = self as *mut Self;
 
