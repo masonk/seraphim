@@ -228,25 +228,25 @@ where
 
         let total_visit_count: u32 = child_edges.iter().map(|e| e.visit_count).sum();
 
-        let mut candidates: Vec<CandidateActionDebugInformation<Action>> = Vec::with_capacity(child_edges.len());
-        for edge in child_edges.iter().rev() { // reversing because the regular graph enumerate is LIFO and we want FIFO
+        let mut candidates: Vec<CandidateActionDebugInformation<Action>> =
+            Vec::with_capacity(child_edges.len());
+        for edge in child_edges.iter().rev() {
+            // reversing because the regular graph enumerate is LIFO and we want FIFO
             let pre_read_visit_count = pre_read_edge_map
                 .get(&edge.action)
                 .map(|e| e.visit_count)
                 .unwrap_or(0);
             let stimulus = self.exploration_stimulus(&edge, total_visit_count);
-            candidates.push(
-                CandidateActionDebugInformation {
-                    action: edge.action.clone(),
-                    prior: edge.prior,
-                    posterior: (edge.visit_count as f32) / (total_visit_count as f32),
-                    total_visits: edge.visit_count,
-                    visits_in_last_read: edge.visit_count - pre_read_visit_count,
-                    average_value: edge.average_value,
-                    total_value: edge.total_value,
-                    exploration_stimulus: stimulus,
-                },
-            );
+            candidates.push(CandidateActionDebugInformation {
+                action: edge.action.clone(),
+                prior: edge.prior,
+                posterior: (edge.visit_count as f32) / (total_visit_count as f32),
+                total_visits: edge.visit_count,
+                visits_in_last_read: edge.visit_count - pre_read_visit_count,
+                average_value: edge.average_value,
+                total_value: edge.total_value,
+                exploration_stimulus: stimulus,
+            });
         }
         let hot = self.ply < self.options.tempering_point;
         let results = self.select();
@@ -366,7 +366,6 @@ where
             }
         }
     }
-
 
     fn advance_to_node(&mut self, node: NodeIdx) {
         self.ply += 1;

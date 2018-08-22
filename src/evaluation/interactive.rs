@@ -125,7 +125,9 @@ where
         &self.current_state
     }
 
-    fn prompt_next_action_debug_info(debug_info: &search::SearchResultsDebugInfo<Action>) -> &Action {
+    fn prompt_next_action_debug_info(
+        debug_info: &search::SearchResultsDebugInfo<Action>,
+    ) -> &Action {
         loop {
             let mut input = String::new();
             io::stdin().read_line(&mut input);
@@ -147,7 +149,7 @@ where
             println!("Expected an integer, empty line, or \"q\"");
         }
     }
-    
+
     pub fn start_debug(&mut self, running: Arc<AtomicBool>) {
         'outer: while running.load(Ordering::SeqCst) {
             if let search::GameStatus::InProgress = self.current_state.status() {
@@ -255,7 +257,11 @@ where
             }
         }
     }
-    fn show_action_info(&self, idx: usize, info: &search::CandidateActionDebugInformation<Action>) -> String {
+    fn show_action_info(
+        &self,
+        idx: usize,
+        info: &search::CandidateActionDebugInformation<Action>,
+    ) -> String {
         format!("[{}] action: {} net: {:0>6.4} search: {:0>6.4} samples: {:>5} value: {:0>7.5} total samples: {:>5} exploration_stimulus: {:0>7.5}", idx, info.action, info.prior, info.posterior, info.visits_in_last_read, info.average_value, info.total_visits, info.exploration_stimulus)
     }
     fn push_history(&mut self, _ply: Ply<Action, State>) {}

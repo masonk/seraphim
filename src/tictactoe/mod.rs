@@ -1,5 +1,5 @@
 mod expert;
-mod gen;
+pub mod gen;
 mod state;
 mod testing;
 

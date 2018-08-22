@@ -119,8 +119,11 @@ def parse(bytes):
   choice =  parsed_features["choice"]
   return tf.reshape(game, [19]), tf.reshape(choice, [9])
 
-def take_snapshot(sess, saver, global_step, snapshot_id=None):
-    global_step_val = sess.run(global_step)
+def write_summaries(sess, summaries, global_step_val, snapshot_id=None):
+    write_training_summaries = tf.summary.FileWriter(model_dir + snapshot_id + "/summaries", sess.graph)
+    write_training_summaries.add_summary(summaries, global_step_val)
+
+def write_snapshot(sess, saver, global_step_val, snapshot_id=None):
     if snapshot_id is None:
         snapshot_id = "{}-{}".format(datetime.datetime.now().replace(microsecond=0).isoformat(), global_step_val)
     snapshot_dir = model_dir + snapshot_id + "/"
@@ -131,7 +134,7 @@ def take_snapshot(sess, saver, global_step, snapshot_id=None):
     except:
         None
 
-    saver.save(sess, saver_prefix, global_step)
+    saver.save(sess, saver_prefix, global_step_val)
     save_savedmodel(sess, snapshot_dir)
 
 def save_savedmodel(sess, snapshot_dir):
@@ -203,7 +206,8 @@ def train(sess):
     label_ph = tf.get_collection('label')[0]
     train_op = tf.get_collection('train_op')[0]
     global_step = tf.get_collection('global_step')[0]
-    
+    merged_summaries = tf.get_collection("merged_summaries")[0]
+
     # for v in [n.name for n in tf.get_default_graph().as_graph_def().node]:
     #     print(v)
     # print("before train loop", sess.run(tf.report_uninitialized_variables()))
@@ -215,29 +219,46 @@ def train(sess):
             dataset = make_dataset(minibatch_size, dataset_dir)
             iterator = dataset.make_initializable_iterator()
             example_it, label_it = iterator.get_next()
-            minibatch = sess.run(global_step)
+            global_step_val = sess.run(global_step)
             for i in range(snapshot_epochs):
                 sess.run(iterator.initializer)
                 while True:
                     if got_sigint():
                         break
                     try:
+                        global_step_val = sess.run(global_step)
                         e = sess.run(example_it)
                         l = sess.run(label_it)
-                        sess.run(train_op, feed_dict={example_ph: e, label_ph: l, training_ph: False})
-
+                        feed = {example_ph: e, label_ph: l, training_ph: False}
+                        if global_step_val % 10 == 0:
+                            summary = sess.run(merged_summaries, feed_dict=feed)
+                            write_summaries(sess, summary, global_step_val, snapshot_id="champion")
+                        sess.run(train_op, feed_dict=feed)
+                        if global_step_val % 1000 == 0:
+                            saver.save(sess, saver_prefix, global_step_val)
                     except tf.errors.OutOfRangeError:
                         break
-                    if minibatch % 1000 == 0:
-                        saver.save(sess, saver_prefix, global_step)
+                    
                 print("epoch {}".format(epoch))
                 epoch += 1
                 if got_sigint():
                     break
 
-            print("EPOCH {} FINISHED ({} minibatches of {} examples)".format(epoch, minibatch, minibatch_size))
-            take_snapshot(sess, saver, global_step, "champion")                
-            take_snapshot(sess, saver, global_step)
+            print("EPOCH {} FINISHED ({} minibatches of {} examples)".format(epoch, global_step_val, minibatch_size))
+            write_snapshot(sess, saver, global_step_val, "champion")                
+            write_snapshot(sess, saver, global_step_val)
+
+def variable_summaries(var):
+  """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
+  with tf.name_scope('summaries'):
+    mean = tf.reduce_mean(var)
+    tf.summary.scalar('mean', mean)
+    with tf.name_scope('stddev'):
+      stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+    tf.summary.scalar('stddev', stddev)
+    tf.summary.scalar('max', tf.reduce_max(var))
+    tf.summary.scalar('min', tf.reduce_min(var))
+    tf.summary.histogram('histogram', var)
 
 def init_model(sess):
     # add tensors (and corresponding ops) to the default graph
@@ -266,6 +287,12 @@ def init_model(sess):
     tf.add_to_collection('global_step', global_step)
 
     loss = tf.losses.mean_squared_error(labels=label, predictions=softmax)
+    with tf.name_scope("loss"):
+        variable_summaries(loss)
+        merged_summaries = tf.summary.merge_all()
+
+    tf.add_to_collection("merged_summaries", merged_summaries)
+
     optimizer = tf.train.AdagradOptimizer(.01)
 
     train = optimizer.minimize(loss, name='train', global_step=global_step)
@@ -283,8 +310,8 @@ def init_model(sess):
     # collections = [ops.GraphKeys.VARIABLES + ops.GraphKeys.TRAINABLE_VARIABLES]
     # for key in collections:
     #     graph.add_to_collection(key, self)
-    take_snapshot(sess, saver, global_step, "champion")
-    take_snapshot(sess, saver, global_step)
+    write_snapshot(sess, saver, global_step, "champion")
+    write_snapshot(sess, saver, global_step)
 
 class catch_sigint(object):
     def __init__(self):
