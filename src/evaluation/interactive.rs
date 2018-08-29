@@ -262,7 +262,17 @@ where
         idx: usize,
         info: &search::CandidateActionDebugInformation<Action>,
     ) -> String {
-        format!("[{}] action: {} net: {:0>6.4} search: {:0>6.4} samples: {:>5} value: {:0>7.5} total samples: {:>5} exploration_stimulus: {:0>7.5}", idx, info.action, info.prior, info.posterior, info.visits_in_last_read, info.average_value, info.total_visits, info.exploration_stimulus)
+        format!("[{}] action: {} net: {:0>6.4} search: {:0>6.4} net (raw): {:0>6.4} loss: {:>+6.4} samples: {:>5} value: {:0>7.5} total samples: {:>5} exploration_stimulus: {:0>7.5}", 
+        idx, 
+        info.action, 
+        info.prior, 
+        info.posterior, 
+        info.raw_prior,
+        info.posterior - info.prior,
+        info.visits_in_last_read, 
+        info.average_value,
+        info.total_visits, 
+        info.exploration_stimulus)
     }
     fn push_history(&mut self, _ply: Ply<Action, State>) {}
     pub fn get_next_action_interactive(

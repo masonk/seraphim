@@ -105,8 +105,14 @@ fn main() {
             "{}/{}/{}/{}",
             MODEL_DIR_PREFIX, model_dir, "champion", "lock"
         );
-        let lock = File::open(lock_path).unwrap();
-        lock.lock_exclusive().unwrap();
+
+        let lock = ::std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(lock_path)
+            .unwrap();
+
+        lock.lock_exclusive();
 
         let file = ::std::fs::OpenOptions::new()
             .write(true)
@@ -223,5 +229,6 @@ fn do_some_games<W: Write>(
             writer.flush();
         }
     }
+    writer.flush();
     Ok((count))
 }

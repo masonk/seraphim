@@ -27,6 +27,7 @@ where
 {
     pub action: Action,
     pub prior: f32,               // The naive probability that this move is the best
+    pub raw_prior: f32,
     pub posterior: f32, // The improved probability that this move is the best after PUCT search
     pub total_visits: u32, // how many times has this line of play been sampled, in total
     pub visits_in_last_read: u32, // how many times was this line of play sampled in the most recent read
@@ -127,6 +128,7 @@ where
 {
     action: Action,     // The Action that this edge represents.
     prior: f32, // P(s, a). The prior probability of choosing this node, derived from the expert guess.
+    raw_prior: f32, // The raw prior we got from the net, before rescaling legal actions to 1. Used for debugging.
     visit_count: u32, // N(s, a) in the AGZ paper. How many times has the action that this edge represents been tried so far?
     total_value: f32, // W(s, a) in the AGZ paper. The total value of an action over all the times it's been tried.
     average_value: f32, // Q(s, a) in the AGZ paper. The average value of an action over all the times it's been tried. Equal to total_value / visit_count.
@@ -252,6 +254,7 @@ where
             candidates.push(CandidateActionDebugInformation {
                 action: edge.action.clone(),
                 prior: edge.prior,
+                raw_prior: edge.raw_prior,
                 posterior: (edge.visit_count as f32) / (total_visit_count as f32),
                 total_visits: edge.visit_count,
                 visits_in_last_read: edge.visit_count - pre_read_visit_count,
@@ -560,11 +563,8 @@ where
             }
 
             let scale = 1.0 / total_probability; // Ok to divide by because at least one action must have non-zero probability
-            for &mut (_, ref mut prior) in legal_actions.iter_mut() {
-                *prior *= scale;
-            }
 
-            for (action, prior) in legal_actions {
+            for (action, raw_prior) in legal_actions {
                 let new_state = game_expert.next(&self.search_tree[node_idx].state, &action);
 
                 unsafe {
@@ -577,7 +577,8 @@ where
                         leaf_idx,
                         Edge {
                             action,
-                            prior,
+                            prior: scale * raw_prior,
+                            raw_prior,
                             visit_count: 0,
                             total_value: 0.0,
                             average_value: 0.5,

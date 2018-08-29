@@ -68,8 +68,8 @@ args = parser.parse_args()
 model_dir = "src/tictactoe/models/" + args.name + "/"
 
 # save a new SavedModel to compete in the eternal tournament after running through this many epochs of training
-snapshot_epochs = 250
-minibatch_size = 2048
+snapshot_epochs = 2500
+minibatch_size = 64
 dense_layers = 10
 # take training examples (stored in TFRecord format) from files in this directory:
 dataset_dir = "src/tictactoe/gamedata"
@@ -119,8 +119,7 @@ def parse(bytes):
   choice =  parsed_features["choice"]
   return tf.reshape(game, [19]), tf.reshape(choice, [9])
 
-def write_summaries(sess, summaries, global_step_val, snapshot_id=None):
-    write_training_summaries = tf.summary.FileWriter(model_dir + snapshot_id + "/summaries", sess.graph)
+def write_summaries(write_training_summaries, summaries, global_step_val):
     write_training_summaries.add_summary(summaries, global_step_val)
 
 def write_snapshot(sess, saver, global_step_val, snapshot_id=None):
@@ -207,6 +206,7 @@ def train(sess):
     train_op = tf.get_collection('train_op')[0]
     global_step = tf.get_collection('global_step')[0]
     merged_summaries = tf.get_collection("merged_summaries")[0]
+    write_training_summaries = tf.summary.FileWriter(model_dir + "champion/summaries", sess.graph)
 
     # for v in [n.name for n in tf.get_default_graph().as_graph_def().node]:
     #     print(v)
@@ -232,7 +232,7 @@ def train(sess):
                         feed = {example_ph: e, label_ph: l, training_ph: False}
                         if global_step_val % 10 == 0:
                             summary = sess.run(merged_summaries, feed_dict=feed)
-                            write_summaries(sess, summary, global_step_val, snapshot_id="champion")
+                            write_summaries(write_training_summaries, summary, global_step_val)
                         sess.run(train_op, feed_dict=feed)
                         if global_step_val % 1000 == 0:
                             saver.save(sess, saver_prefix, global_step_val)
