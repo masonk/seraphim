@@ -14,6 +14,11 @@ use protobuf::Message;
 use tensorflow as tf;
 
 impl search::Action for usize {}
+impl search::ActionIdx for usize {
+    fn index(&self) -> usize {
+        *self
+    }
+}
 
 #[derive(Debug)]
 pub struct DnnGameExpert {
@@ -261,6 +266,10 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
         let mut clone = state.clone();
         clone.play(*action).unwrap();
         clone
+    }
+
+    fn max_actions(&mut self) -> usize {
+        9
     }
 }
 

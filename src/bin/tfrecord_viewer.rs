@@ -42,10 +42,9 @@ fn main() {
                 match r {
                     Some(r) => {
                         println!("{:?}", r);
-                        let feat = parse_ttt_feature(r);
-                        let featuremap = feat.get_feature();
+                        let example = parse_ttt_example(r);
 
-                        println!("{:?}", featuremap);
+                        println!("{:?}", example);
                     }
                     _ => {
                         println!("EOF");
@@ -61,11 +60,11 @@ fn main() {
     }
 }
 
-fn parse_ttt_feature(buf: Vec<u8>) -> seraphim::tictactoe::gen::feature::Features {
-    let mut features = seraphim::tictactoe::gen::feature::Features::new();
+fn parse_ttt_example(buf: Vec<u8>) -> seraphim::tictactoe::gen::example::Example {
+    let mut example = seraphim::tictactoe::gen::example::Example::new();
     let mut cursor = std::io::Cursor::new(buf);
     let mut is = protobuf::stream::CodedInputStream::new(&mut cursor);
-    features.merge_from(&mut is).unwrap();
-    features
+    example.merge_from(&mut is).unwrap();
+    example
 
 }

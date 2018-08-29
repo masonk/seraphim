@@ -51,8 +51,8 @@ pub struct SearchResultsInfo<Action>
 where
     Action: self::Action,
 {
-    pub results: Vec<f32>, // the improved probabitly estimates after searching. These probabilities will be in the same order as the input hypotheses.
-    // Results are returned in the same order as the actions received as input from the GameExpert.
+    pub results: Vec<f32>, // the improved probabitly estimates after searching. The result at a given index is the result for the Action that returned
+    // that index from ActionIdx::index. 
     pub selection: Action, // which move did the engine select
     pub application_token: ApplicationToken,
 }
@@ -63,8 +63,14 @@ pub trait State:
     fn status(&self) -> GameStatus;
 }
 
+// search results will be returned as an array of 
+pub trait ActionIdx {
+    fn index(&self) -> usize;
+}
+
 pub trait Action:
     ::std::cmp::PartialEq
+    + ActionIdx
     + ::std::cmp::Eq
     + ::std::fmt::Display
     + ::std::hash::Hash
@@ -99,6 +105,12 @@ where
 
     // IMPORTANT: The same caveat about referential transparency applies to this function.
     fn next(&mut self, &State, &Action) -> State; // When MCTS choses an action for the first time, it will call this function to obtain the new state. Used during the MCTS leaf expansion step.
+
+    // The results of search are returned as a vector of probabilities over the space of possible actions.
+    // The action_space tells the cardinality of the (finite) set of possible actions for the game. E.g., in 19x19 Go, there are 363 possible actions -
+    // 361 possible stone placements, pass, and resign. In a simple model of tic tac toe, there are 9.
+    // The vector of search results will be dense vector of this size, with one entry per action, including 
+    fn max_actions(&mut self) -> usize;
 }
 
 type NodeIdx = petgraph::graph::NodeIndex<petgraph::graph::DefaultIx>;
@@ -249,7 +261,7 @@ where
             });
         }
         let hot = self.ply < self.options.tempering_point;
-        let results = self.select();
+        let results = self.select(game_expert);
         SearchResultsDebugInfo {
             results,
             hot,
@@ -262,7 +274,7 @@ where
         game_expert: &mut GameExpert<State, Action>,
     ) -> SearchResultsInfo<Action> {
         self.readout(game_expert);
-        self.select()
+        self.select(game_expert)
     }
     pub fn apply_search_results(&mut self, result: &SearchResultsInfo<Action>) {
         self.advance_to_node(result.application_token.0);
@@ -287,7 +299,7 @@ where
     // After visitation is done, it's time to select the next action that will actually be played.
     // The AGZ algorithm uses tempering. Before tempering, it selects the next action with probability proportional to visit counts.
     // After tempering, it just choses the next action with the highest count.
-    fn select(&mut self) -> SearchResultsInfo<Action> {
+    fn select(&mut self, game_expert: &mut GameExpert<State, Action>) -> SearchResultsInfo<Action> {
         /*
         Read the board by playing out a number of games according to the PUCB MCTS algorithm.
 
@@ -309,8 +321,9 @@ where
         TODO: Include win probability as a feature.
         */
         let self_ptr = self as *mut Self;
+        let max_actions = game_expert.max_actions();
         loop {
-            // There could be a fp error so that total probably is slightly less than 1. If we hit that extremely rare case, just try picking again.
+            // There could be a fp error so that total probably is slightly less than 1. This almost never occurs, but if it does, we'll just resample.
 
             let child_edges: Vec<(&Edge<Action>, NodeIdx)> = self.search_tree
                 .neighbors(self.root_idx)
@@ -321,7 +334,7 @@ where
                     )
                 })
                 .collect();
-            let mut results = Vec::with_capacity(child_edges.len());
+            let mut results = vec![ 0.0; max_actions ];
 
             let total_visit_count: u32 = self.search_tree
                 .neighbors(self.root_idx)
@@ -334,14 +347,14 @@ where
 
             for (edge, _) in &child_edges {
                 let prob: f32 = (edge.visit_count as f32) / (total_visit_count as f32);
-                results.push(prob);
+                results[edge.action.index()]= prob;
             }
             if self.ply < self.options.tempering_point {
                 for (i, (edge, node_idx)) in child_edges.iter().enumerate() {
                     let rand: f32 = unsafe { (*self_ptr).rand.gen_range(0.0, 1.0) }; // Ok, because we don't rely any other state in for random number gen
                     let mut cum_prob = 0.0;
 
-                    cum_prob += results[i];
+                    cum_prob += results[edge.action.index()];
                     if cum_prob > rand {
                         let selection = edge.action.clone();
                         return SearchResultsInfo {

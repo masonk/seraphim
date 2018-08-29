@@ -36,6 +36,9 @@ impl search::GameExpert<State, usize> for NaiveGameExpert {
         clone.play(*action).unwrap();
         clone
     }
+    fn max_actions(&mut self) -> usize {
+        9
+    }
 }
 
 fn _setup_test() {
