@@ -116,3 +116,13 @@ In Seraphim, the GameExpert is a generic trait which is to be implemented for ea
 ## Getting started
 
 [Tic Tac Toe](src/tictactoe/mod.rs) contains an implementation of a GameExpert and its unit tests show examples of self-play of TicTacToe using a very simple expert policy (giving every legal move the same weight). Since TTT is a game with a small state space, the MCTS algorith alone is usually, but not always, able to find the best move from any position.
+
+## Commands
+
+source bin/activate
+src/tictactoe/train.py my_model --init
+cargo run --release --bin generate_games
+cargo run --release --bin tfrecord_viewer
+cargo run --release --bin debug
+src/tictactoe/train/py my_model
+
