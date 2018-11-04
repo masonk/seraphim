@@ -35,7 +35,7 @@ static MODEL_DIR_PREFIX: &'static str = "src/tictactoe/models";
 
 fn init_logger() {
     flexi_logger::Logger::with_env()
-        .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
+        // .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
         .o_duplicate_info(true)
         .start()
         .unwrap();
@@ -91,7 +91,8 @@ fn main() {
 
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
-    }).expect("Error setting Ctrl-C handler");
+    })
+    .expect("Error setting Ctrl-C handler");
 
     let mut count = 0;
 
@@ -157,7 +158,8 @@ fn main() {
         std::fs::rename(
             next_file_path.clone(),
             format!("{}.tfrecord", next_file_path),
-        ).unwrap();
+        )
+        .unwrap();
 
         if next_id - max_files >= 0 {
             stale_index

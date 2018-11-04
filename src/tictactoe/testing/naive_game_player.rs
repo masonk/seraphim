@@ -49,7 +49,7 @@ fn _setup_test() {
 
 fn _init_env_logger() {
     flexi_logger::Logger::with_env()
-        .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
+        // .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
         .o_duplicate_info(true)
         .start()
         .unwrap()
@@ -139,7 +139,8 @@ mod test {
             |_|_|o|
             |o|x|_|
             |x|_|o|",
-        ).expect("Couldn't parse board.");
+        )
+        .expect("Couldn't parse board.");
         let mut game_expert = NaiveGameExpert::new();
         let options = search::SearchTreeOptions {
             readouts: 1500,

@@ -1,6 +1,5 @@
 # Seraphim, an Alpha Zero-style game AI
 
-[TOC]
 Seraphim is a monte carlo tree search algorithm that uses the AGZ variant of the PUCT algorithm ("primary upper confidence tree") to chose its next action.
 
 This variant of the algorithm relies on an _expert policy_ that, given a state, has a belief about which legal action is most likley to be the best one.
@@ -9,10 +8,30 @@ The tree search is more likely to sample actions that the expert policy believes
 
 
 ## TLDR
+            ------------------ src/tictactoe/train.py <--------------------
+            |                                                             |
+            v                                                             |
+    src/tictactoe/models/*                                                |
+            |                                                             |
+            v                                                             |
+src/bin/generate_games.rs                                                 |
+            |                                                             |
+            -----------------> src/tictactoe/gamedata/*.tfrecord ----------
 
-Your job as a consumer of Seraphim is to implement `seraphim::search::GameExpert<S, A>` for the game you want Seraphim to learn. The GameExpert knows the rules of the game and has prior beliefs about which move is best from every position. seraphim::search runs a MCTS on each game state by querying the `GameExpert` to supply legal next actions and its prior beliefs about each action. 
+Seraphim uses an expert policy to search a game tree. After searching, Seraphim produces a record
+of the best moves that it found. This record is a training example for the expert model - the model
+trains itself to be more like the results of search, and the improved model is fed back to Seraphim
+for subsequent searches.
+
+Seraphim provides the searching. Your job as a consumer of Seraphim is to provide the expert policy.  
+
+The expert is abstracted by the `seraphim::search::GameExpert` trait. Implementations of the game expert are likely to use ML models to produce the required hypotheses, and the interface is designed with this use-case in mind. That said, strictly speaking, seraphim core does not know about ML models, and simply requires any implementation of a GameExpert in order to perform its search. In the paper, and in the included Tic Tac Toe example, the model is a fully connected DNN of customizable depth.
+
+Meanwhile, the GameExpert does know the rules of the game it is playing, and ascribes prior beliefs about the quality of possibles moves. It  is abstract over game state (S) and the possible game actions (A). Search does not know the rules of the game it is playing; it simply samples availables actions with reference to the probablity that the expert model ascribes to them.
 
 ## Installation
+
+I'm in the process of dockerizing both halves of Seraphim for superior portability. For now, docker doesn't work, and you have to install these deps manually.
 
 ### Non-Cargo dependencies
 #### IMPORTANT NOTE
@@ -46,7 +65,9 @@ Your job as a consumer of Seraphim is to implement `seraphim::search::GameExpert
    source bin/activate
    ```
 
-- [TensorFlow for python](https://www.tensorflow.org/install/install_linux#installing_with_virtualenv)
+- [TensorFlow for python](
+    
+)
  
    (enable your virtualenv first, if you're using one, then install the pip package)
    
@@ -70,16 +91,27 @@ This project requires nightly rust, because it uses feature gates. Use rustup to
 
 to verify the installation. A few tests might fail, such as `tictactoe::expert::increasing_readouts_improves_play`. But everything should build.
 
+### Produce games of tictactoe
+
+
 ### Training tictactoe
 
-`src/tictactoe` shows a full example of training a DNN using tensorflow. The training script is at `src/bin/train_tictactoe_simple.rs`
+`src/tictactoe` shows a full example of training a DNN using tensorflow. The training script is at `src/tictactoe/train.py`
 
 You can run the training example with tracing enabled to see the whole algorithm at work.
 
 ```
-export RUST_LOG=seraphim,train=trace
-cargo run --bin train_tictactoe_simple
+source bin/activate
+src/tictactoe/train.py --init my_model
+cargo run --release generate_games my_model
 ```
+
+Wait for searching script to generate some training examples (in tictactoe/gamedata/my_model/*.tfrecord). Then you can improve your naive model (which was initialized with random weights) by training on those examples.
+
+```
+src/tictactoe/train.py my_model
+```
+
 
 ## The PUCT algorithm
 

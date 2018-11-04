@@ -1,7 +1,10 @@
 Priority Queue:
+    - Dockerize both halfs of search
     - summary metrics & checkpointing for Tensorboard   
         - accuracy metric
     - add to_win to the hypothesis api
+    - multithread search
+        - replace petgraph with a custom lockless search tree
     - unit tests    
         - Do the posterior possibilities add to one?
         - testing framework for implementors
