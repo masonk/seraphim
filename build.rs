@@ -12,7 +12,7 @@ fn init_logger() {
 }
 
 fn main() {
-    regenerate_rust_gencode();
+    // regenerate_rust_gencode();
 }
 
 // This doesn't need to be done on every build; only when the example.proto or feature.proto

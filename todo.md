@@ -1,5 +1,11 @@
 Priority Queue:
-    - Dockerize both halfs of search
+    - Dockerize generate_games.rs
+        - volumize cargo cache ($CARGO_HOME)
+            - make it owned by the same UID as the host UID
+        - make sure created files have the same permissions
+         on both sides of the $SERAPHIM bind mount
+
+
     - summary metrics & checkpointing for Tensorboard   
         - accuracy metric
     - add to_win to the hypothesis api

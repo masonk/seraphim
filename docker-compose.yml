@@ -1,0 +1,23 @@
+version: "3.2"
+
+services:
+  dev-play:
+     # run the container as the current user so that permissions will across the bindmount
+     # and so that the container doesn't have escalated privs.
+    build: 
+      context: "."
+      dockerfile: "play/Dockerfile"
+    volumes:
+      - '.:/seraphim'
+      - type: volume
+        source: cargo-cache
+        target: /cargo
+
+    environment:
+      - CARGO_HOME=/cargo
+      - SERAPHIM=/seraphim
+      - HISTFILE=/seraphim/devlocal/bash_history
+    working_dir: /seraphim
+
+volumes: 
+  cargo-cache:

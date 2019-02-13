@@ -16,6 +16,7 @@ use clap::{App, Arg, SubCommand};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use std::env;
 use std::error::Error;
 use std::fs;
 use std::fs::File;
@@ -29,9 +30,9 @@ use fs2::FileExt;
 
 static DEFAULT_GAMES_PER_FILE: i64 = 1000;
 static DEFAULT_MAX_FILES: i64 = 50;
-static DEFAULT_OUTPUT_DIR: &'static str = "src/tictactoe/gamedata";
+static DEFAULT_OUTPUT_DIR: &'static str = "gamedata";
 static CONTROL_FILE: &'static str = "control";
-static MODEL_DIR_PREFIX: &'static str = "src/tictactoe/models";
+static MODEL_DIR_PREFIX: &'static str = "models";
 
 fn init_logger() {
     flexi_logger::Logger::with_env()
@@ -67,11 +68,14 @@ fn main() {
                                 .takes_value(true))
                             .get_matches();
 
+    let seraphim_dir = env::var("SERAPHIM").unwrap();
     let model_dir = matches.value_of("model_dir").unwrap();
+
     let fq_model_dir = format!(
-        "{}/{}/{}/{}",
-        MODEL_DIR_PREFIX, model_dir, "champion", "saved_model"
+        "{}/{}/{}/{}/{}",
+        seraphim_dir, MODEL_DIR_PREFIX, model_dir, "champion", "saved_model"
     );
+    println!("{}", fq_model_dir);
     let games_per_file = matches
         .value_of("games_per_file")
         .and_then(|v| v.parse::<i64>().ok())
@@ -80,7 +84,10 @@ fn main() {
         .value_of("max_files")
         .and_then(|v| v.parse::<i64>().ok())
         .unwrap_or(DEFAULT_MAX_FILES);
-    let output_dir = matches.value_of("output_dir").unwrap_or(DEFAULT_OUTPUT_DIR);
+    let fq_default_output_dir = format!("{}/{}", seraphim_dir, DEFAULT_OUTPUT_DIR);
+    println!("{}", seraphim_dir);
+    println!("{}", fq_default_output_dir);
+    let output_dir = matches.value_of("output_dir").unwrap_or(&fq_default_output_dir);
     let exploration_coefficient = matches
         .value_of("exploration_coefficient")
         .and_then(|c| c.parse::<f32>().ok())
@@ -103,8 +110,8 @@ fn main() {
         println!("{}", next_id);
         let next_file_path = format!("{}/batch-{:07}", output_dir, next_id);
         let lock_path = format!(
-            "{}/{}/{}/{}",
-            MODEL_DIR_PREFIX, model_dir, "champion", "lock"
+            "{}/{}/{}/{}/{}",
+            seraphim_dir, MODEL_DIR_PREFIX, model_dir, "champion", "lock"
         );
 
         let lock = ::std::fs::OpenOptions::new()
@@ -127,7 +134,7 @@ fn main() {
         let mut ge = match seraphim::tictactoe::DnnGameExpert::from_saved_model(&fq_model_dir) {
             Ok(ge) => ge,
             Err(e) => {
-                panic!("Couldn't restore a model from '{}'. \nTry running 'src/tictactoe/init.py {}'\nError:\n{:?}", fq_model_dir, model_dir,  e);
+                panic!("Couldn't restore a model from '{}'. \nTry running '$SERAPHIM/src/tictactoe/init.py {}'\nError:\n{:?}", fq_model_dir, model_dir,  e);
             }
         };
         lock.unlock();

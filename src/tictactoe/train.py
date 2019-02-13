@@ -24,21 +24,20 @@ This script initialize a new model, or restores a serialized metagraph, and trai
 
 It operates over this file structure:
 
-src/bin/tictactoe
-    gamedata/                         [6]
-        0.tfrecord                    [7]
-        1.tfrecord                
-        control                       [8]
-        2                             [9]
-        stale_files                   [10]
-    models/
-        foo/                          [1]   
-            champion/                 [2]
-                checkpoints/          [3] 
-                saved_model/          [4]
-            2018-08-13T23:11:51-0/    [5]
-                checkpoints/        
-                saved_model/          
+/gamedata/                        [6]
+    0.tfrecord                    [7]
+    1.tfrecord                
+    control                       [8]
+    2                             [9]
+    stale_files                   [10]
+/models/
+    foo/                          [1]   
+        champion/                 [2]
+            checkpoints/          [3] 
+            saved_model/          [4]
+        2018-08-13T23:11:51-0/    [5]
+            checkpoints/        
+            saved_model/          
 
 [1]: A model dir. Every model has a name, and corresponds to a particular configuration of neural network.  
     Each directory in a model is a snapshot of the model at particular point in time.
@@ -68,14 +67,15 @@ parser.set_defaults(init=False)
 
 args = parser.parse_args()
 
-model_dir = "src/tictactoe/models/" + args.name + "/"
+seraphim_dir = os.environ["SERAPHIM"]
+model_dir = seraphim_dir + "/models/" + args.name + "/"
 
 # save a new SavedModel to compete in the eternal tournament after running through this many epochs of training
 snapshot_epochs = 2500
 minibatch_size = 2048
 dense_layers = 5
 # take training examples (stored in TFRecord format) from files in this directory:
-dataset_dir = "src/tictactoe/gamedata"
+dataset_dir = seraphim_dir + "/gamedata"
 
 def clean_up_stale_files(stale_files):
     for path in stale_files:

@@ -31,67 +31,72 @@ Meanwhile, the GameExpert does know the rules of the game it is playing, and asc
 
 ## Installation
 
-I'm in the process of dockerizing both halves of Seraphim for superior portability. For now, docker doesn't work, and you have to install these deps manually.
+This distribution consists of two Dockerfiles. 
 
-### Non-Cargo dependencies
-#### IMPORTANT NOTE
+One of them runs Tensorflow, and you need to install nvidia-docker to make it work
+https://github.com/NVIDIA/nvidia-docker
 
-> You'll have to build Tensorflow from source, with GPU acceleration enabled, in order to
-> run the nets or build your own nets.
-> This is an involved process and the only officially supported platforms for this are Ubuntu 16.04 and MacOS.
-> I tried to build this on Windows and it was such a pain that I found it easier to download Ubuntu and dual boot into Ubuntu just to develop this net.
+On Ubuntu, after you install nvidia-docker, make sure you reload docker
+sudo systemctl daemon-reload
+sudo systemctl restart docker
 
-- [Nightly Rust](https://github.com/rust-lang-nursery/rustup.rs/#other-installation-methods)
-- C linker, such as `gcc`
-- openssl dev package
+Build the tictactoe training image:
+nvidia-docker build -f train/Dockerfile -t train .
 
-    On Ubuntu:
+Build the tictactoe playing image:
+docker build -f play/Dockerfile -t play .
 
-    ```
-    apt install libssl-dev
-    ```
+Build the playing image:
+docker build -f play/Dockerfile -t play .
 
+## Running
 
-- [Python 3](https://www.tensorflow.org/install/install_linux#installing_with_virtualenv) 
-   
-   This is to run the Python scripts that build the tensorflow graphs used by the game experts. You can set up the seraphim repo as a Python3 virtualenv root by following the linked instructions.
+Both the training script (train.py) and the playing script (generate_games.rs) expect game data to 
+be mounted to /gamedata and saved TF models to be mounted to /models. You can use Docker volumes or 
+bindmounts to store the data. I prefer a bindmount, because I find it useful to access the files 
+from other programs. 
 
-    e.g.
-   
-   ```
-   sudo apt install python3-pip python3-dev python-virtualenv
-   cd seraphim
-   virtualenv --system-site-packages -p python3 .
-   source bin/activate
-   ```
+To bootstap the training process, initialize an empty model with random weights. (The game player requires
+a model to start generating game data, but it doesn't need a good one!)
 
-- [TensorFlow for python](
-    
-)
- 
-   (enable your virtualenv first, if you're using one, then install the pip package)
-   
-   ```
-   pip3 install --upgrade tensorflow-gpu
-   ```
+$model=NAME
+nvidia-docker run \
+    --mount=type=bind,src=$(pwd)/models,destination=/models \
+    --mount=type-bind,src=$(pwd)/gamedata,destination=/gamedata \
+    train $model --init
 
-- [GPU-accelerated libtensorflow.so](https://github.com/tensorflow/rust#manual-tensorflow-compilation)
-   
-   Bite the bullet and build tensorflow core from scratch with GPU acceleration enabled. This is an involved process, but there's no point in running the nets if you aren't GPU accelerated. This substep involves installing Cuda **9.0** (not 9.1), CuDNN **7.0** (not 7.1), and Ubuntu **16.04** (not 17 or 18).
+Now you can start playing games
+docker run
+    --mount=type=bind,src=$(pwd)/models,destination=/models \
+    --mount=type-bind,src=$(pwd)/gamedata,destination=/gamedata \
+    play $model
 
 
+After the player has generated some game data (say, at least 10 batch files), you can start training it. 
 
-### Cargo
-This is a Cargo project, built on nightly rust. `cargo` is Rust's module and build system, equivalent to node's `npm`.
+nvidia-docker run \
+    --mount=type=bind,src=$(pwd)/models,destination=/models \
+    --mount=type-bind,src=$(pwd)/gamedata,destination=/gamedata \
+    train $model
 
-This project requires nightly rust, because it uses feature gates. Use rustup to switch to a nightly toolchain if you haven't already, then run
 
-`cargo build`
-`cargo test`
-
-to verify the installation. A few tests might fail, such as `tictactoe::expert::increasing_readouts_improves_play`. But everything should build.
-
-### Produce games of tictactoe
+## Docker cheat sheet (from https://docs.docker.com/get-started/part2/)
+docker build -t friendlyhello .  # Create image using this directory's Dockerfile
+docker run -p 4000:80 friendlyhello  # Run "friendlyname" mapping port 4000 to 80
+docker run -d -p 4000:80 friendlyhello         # Same thing, but in detached mode
+docker container ls                                # List all running containers
+docker container ls -a             # List all containers, even those not running
+docker container stop <hash>           # Gracefully stop the specified container
+docker container kill <hash>         # Force shutdown of the specified container
+docker container rm <hash>        # Remove specified container from this machine
+docker container rm $(docker container ls -a -q)         # Remove all containers
+docker image ls -a                             # List all images on this machine
+docker image rm <image id>            # Remove specified image from this machine
+docker image rm $(docker image ls -a -q)   # Remove all images from this machine
+docker login             # Log in this CLI session using your Docker credentials
+docker tag <image> username/repository:tag  # Tag <image> for upload to registry
+docker push username/repository:tag            # Upload tagged image to registry
+docker run username/repository:tag                   # Run image from a registry
 
 
 ### Training tictactoe

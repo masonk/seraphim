@@ -1,6 +1,5 @@
 #![feature(conservative_impl_trait, universal_impl_trait)]
 #![cfg_attr(feature = "clippy", feature(plugin))]
-#![cfg_attr(feature = "clippy", plugin(clippy))]
 #![feature(nll)]
 #![feature(test)]
 

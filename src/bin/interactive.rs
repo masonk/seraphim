@@ -4,17 +4,18 @@ extern crate fs2;
 
 use clap::{App, Arg};
 use fs2::FileExt;
+use std::env;
 use std::fs::File;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 extern crate seraphim;
-static MODEL_DIR_PREFIX: &'static str = "src/tictactoe/models";
+static MODEL_DIR_PREFIX: &'static str = "/models";
 
 fn main() {
     let matches = App::new("Interactive TicTacToe")
             .about("Start an interactive session where the expert plays one side and the user plays the other half.")
             .arg(Arg::with_name("model_dir")
-                .help("The name of a directory under src/tictactoe/models")
+                .help("The name of a directory under $SERAPHIM/models")
                 .required(true))
             .arg(Arg::with_name("debug")
                 .long("debug")
@@ -38,13 +39,15 @@ fn main() {
 }
 
 fn start_game(debug: bool, model_dir: String, exploration_coefficient: f32) {
+    let seraphim_dir = env::var("SERAPHIM").unwrap();
+    let model_dir = matches.value_of("model_dir").unwrap();
     let fq_model_dir = format!(
-        "{}/{}/{}/{}",
-        MODEL_DIR_PREFIX, model_dir, "champion", "saved_model"
+        "{}/{}/{}/{}/{}",
+        seraphim_dir, MODEL_DIR_PREFIX, model_dir, "champion", "saved_model"
     );
     let lock_path = format!(
-        "{}/{}/{}/{}",
-        MODEL_DIR_PREFIX, model_dir, "champion", "lock"
+        "{}/{}/{}/{}/{}",
+        seraphim_dir, MODEL_DIR_PREFIX, model_dir, "champion", "lock"
     );
 
     let lock = File::open(lock_path);
