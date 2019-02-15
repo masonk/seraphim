@@ -1,23 +1,27 @@
 version: "3.2"
 
 services:
-  dev-play:
-     # run the container as the current user so that permissions will across the bindmount
-     # and so that the container doesn't have escalated privs.
+  play:
     build: 
+      args:
+        # run the container as the current user so that permissions will work across the 
+        # bindmount and so that the container doesn't have escalated privs.
+        HOST_UID: "${HOST_UID}"
+        HOST_GID: "${HOST_GID}"
+        WHO: "${WHO}"
       context: "."
       dockerfile: "play/Dockerfile"
     volumes:
       - '.:/seraphim'
-      - type: volume
-        source: cargo-cache
-        target: /cargo
-
+      - 'rust:/rust' # rust toolchain & build cache
+      - 'bash:/bash' # bash history
+      - 'data:/data' # model and game data
     environment:
-      - CARGO_HOME=/cargo
-      - SERAPHIM=/seraphim
-      - HISTFILE=/seraphim/devlocal/bash_history
+      - SERAPHIM=/data # seraphim binaries look for and put their data in $SERAPHIM
+      - HISTFILE=/bash/history
     working_dir: /seraphim
 
-volumes: 
-  cargo-cache:
+volumes:
+  rust:
+  bash:
+  data:

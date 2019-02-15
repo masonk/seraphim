@@ -37,14 +37,19 @@ One of them runs Tensorflow, and you need to install nvidia-docker to make it wo
 https://github.com/NVIDIA/nvidia-docker
 
 On Ubuntu, after you install nvidia-docker, make sure you reload docker
+
+```
 sudo systemctl daemon-reload
 sudo systemctl restart docker
+```
 
 Build the tictactoe training image:
 nvidia-docker build -f train/Dockerfile -t train .
 
 Build the tictactoe playing image:
-docker build -f play/Dockerfile -t play .
+
+`./develop`
+
 
 Build the playing image:
 docker build -f play/Dockerfile -t play .
