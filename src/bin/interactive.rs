@@ -40,7 +40,7 @@ fn main() {
 
 fn start_game(debug: bool, model_dir: String, exploration_coefficient: f32) {
     let seraphim_dir = env::var("SERAPHIM").unwrap();
-    let model_dir = matches.value_of("model_dir").unwrap();
+
     let fq_model_dir = format!(
         "{}/{}/{}/{}/{}",
         seraphim_dir, MODEL_DIR_PREFIX, model_dir, "champion", "saved_model"

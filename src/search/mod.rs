@@ -6,7 +6,7 @@ use petgraph;
 use rand;
 use rand::Rng;
 use std::collections::HashMap;
-
+use std::time;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GameStatus {
     InProgress,
@@ -42,6 +42,7 @@ pub struct SearchResultsDebugInfo<Action>
 where
     Action: self::Action,
 {
+    pub time: time::Duration, // How long it took to compute this move
     pub candidates: Vec<CandidateActionDebugInformation<Action>>,
     pub results: SearchResultsInfo<Action>,
     pub hot: bool, // Was this move chosen from a cold or hot sample. Hot introduces noise early in the game to ensure game variety.
@@ -219,6 +220,7 @@ where
         &mut self,
         game_expert: &mut GameExpert<State, Action>,
     ) -> SearchResultsDebugInfo<Action> {
+        let now = time::Instant::now();
         let child_edges_pre_read: Vec<Edge<Action>> = self.search_tree
             .neighbors(self.root_idx)
             .map(|child_node_idx| {
@@ -265,7 +267,9 @@ where
         }
         let hot = self.ply < self.options.tempering_point;
         let results = self.select(game_expert);
+        let elapsed = now.elapsed();
         SearchResultsDebugInfo {
+            time: elapsed,
             results,
             hot,
             candidates,

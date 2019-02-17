@@ -27,5 +27,3 @@ USER ${WHO}
 
 RUN rustup install nightly
 RUN rustup default nightly
-
-

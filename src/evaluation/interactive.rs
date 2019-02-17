@@ -3,6 +3,7 @@ use std::fmt::Write;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time;
 
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub enum Player {
@@ -155,6 +156,7 @@ where
             if let search::GameStatus::InProgress = self.current_state.status() {
                 println!("{}", self.current_state);
                 println!("{:?}", self.next_player);
+                    
                 let debug = &self.searcher.read_debug(&mut self.expert);
                 for (i, info) in debug.candidates.iter().enumerate() {
                     println!("{}", self.show_action_info(i, info));
@@ -233,7 +235,9 @@ where
                     for (i, info) in debug.candidates.iter().enumerate() {
                         println!("{}", self.show_action_info(i, info));
                     }
-
+                    let sec = (debug.time.as_secs() as f64) + (debug.time.subsec_nanos() as f64 / 1000_000_000.0);
+                    println!("Computed move in {:.3}s", sec);
+                    
                     self.current_state = self.expert
                         .next(&self.current_state, &debug.results.selection);
                 }

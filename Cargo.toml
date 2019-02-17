@@ -14,7 +14,7 @@ flexi_logger = "*"
 petgraph = "*"
 rand = "*"
 lazy_static = "*"
-tensorflow = "*"
+tensorflow = { version = "0.12.0" }
 clap = "*"
 ctrlc = { version = "*", features = ["termination"] }
 protobuf = "*"

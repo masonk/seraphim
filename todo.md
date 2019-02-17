@@ -1,10 +1,7 @@
 Priority Queue:
-    - Dockerize generate_games.rs
-        - volumize cargo cache ($CARGO_HOME)
-            - make it owned by the same UID as the host UID
-        - make sure created files have the same permissions
-         on both sides of the $SERAPHIM bind mount
-
+    - Automatically initialize and train a model with one command
+    - hardware accelerate inference
+    - drive model_name from $SERAPHIM_MODEL
 
     - summary metrics & checkpointing for Tensorboard   
         - accuracy metric

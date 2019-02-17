@@ -3,5 +3,8 @@
 export HOST_UID=$(id -u)
 export HOST_GID=$(id -g)
 export WHO=$(whoami)
+export SERAPHIM_MODEL_NAME=$1
+shift
 
-docker-compose run play
+docker-compose $@
+

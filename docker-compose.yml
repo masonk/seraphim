@@ -1,7 +1,10 @@
-version: "3.2"
+version: "2.3"
 
 services:
   play:
+    # stdin_open: true
+    # tty: true
+    command: /bin/bash
     build: 
       args:
         # run the container as the current user so that permissions will work across the 
@@ -18,9 +21,34 @@ services:
       - 'data:/data' # model and game data
     environment:
       - SERAPHIM=/data # seraphim binaries look for and put their data in $SERAPHIM
-      - HISTFILE=/bash/history
+      - HISTFILE=/bash/play_history
+      - MODEL_NAME=${MODEL_NAME}
     working_dir: /seraphim
-
+  train:
+    command: "bash"
+    runtime: nvidia 
+    # NOTE: The SHMEM allocation limit is set to the default of 64MB.  This may be
+    # insufficient for TensorFlow.  NVIDIA recommends the use of the following flags:
+    # nvidia-docker run --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 ...
+    build:
+      args:
+        # run the container as the current user so that permissions will work across the 
+        # bindmount and so that the container doesn't have escalated privs.
+        HOST_UID: "${HOST_UID}"
+        HOST_GID: "${HOST_GID}"
+        WHO: "${WHO}"
+      context: "."
+      dockerfile: "train/Dockerfile"
+    volumes:
+      - '.:/seraphim'
+      - 'bash:/bash' # bash history
+      - 'data:/data' # model and game data
+    environment:
+      - SERAPHIM=/data # seraphim binaries look for and put their data in $SERAPHIM
+      - HISTFILE=/bash/train_history
+      - NVIDIA_VISIBLE_DEVICES=all
+      - MODEL_NAME=${MODEL_NAME}
+    working_dir: /seraphim
 volumes:
   rust:
   bash:

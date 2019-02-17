@@ -1,13 +1,10 @@
 # Seraphim, an Alpha Zero-style game AI
 
-Seraphim is a monte carlo tree search algorithm that uses the AGZ variant of the PUCT algorithm ("primary upper confidence tree") to chose its next action.
-
-This variant of the algorithm relies on an _expert policy_ that, given a state, has a belief about which legal action is most likley to be the best one.
-
-The tree search is more likely to sample actions that the expert policy believes are probably the best ones. If the expert policy is good, then the MCTS will avoid lousy actions and spend most of its time examining good lines of play.
+Seraphim is a Rust library that efficiently solves the multiarmed bandit problem by exploring a search tree (such as a game tree) using the PUCT algorithm described in the original Alpha Go paper. The PUCT algorithm relies upon an expert policy (the `GameExpert`), that, given an abstract game state (a `State`) can ascribe probabilities (or logits) to actions (`Action`) that are likely to be better.  Typically, the expert policy will be implemented as a machine learning model, such as a DNN (Deep Neural Network).
 
 
-## TLDR
+## The Reinforcement Learning Cycle
+```
             ------------------ src/tictactoe/train.py <--------------------
             |                                                             |
             v                                                             |
@@ -17,6 +14,7 @@ The tree search is more likely to sample actions that the expert policy believes
 src/bin/generate_games.rs                                                 |
             |                                                             |
             -----------------> src/tictactoe/gamedata/*.tfrecord ----------
+```
 
 Seraphim uses an expert policy to search a game tree. After searching, Seraphim produces a record
 of the best moves that it found. This record is a training example for the expert model - the model
@@ -25,65 +23,44 @@ for subsequent searches.
 
 Seraphim provides the searching. Your job as a consumer of Seraphim is to provide the expert policy.  
 
-The expert is abstracted by the `seraphim::search::GameExpert` trait. Implementations of the game expert are likely to use ML models to produce the required hypotheses, and the interface is designed with this use-case in mind. That said, strictly speaking, seraphim core does not know about ML models, and simply requires any implementation of a GameExpert in order to perform its search. In the paper, and in the included Tic Tac Toe example, the model is a fully connected DNN of customizable depth.
+The expert is abstracted by the `seraphim::search::GameExpert` trait. Implementations of the game expert are likely to use ML models to produce the required hypotheses, and the interface is designed with this use-case in mind, though strictly speaking, core seraphim does not know about ML models, and simply requires any implementation of a GameExpert in order to perform its search. In the paper, and in the included Tic Tac Toe example, the model is a fully connected DNN of customizable depth, written in TensorFlow.
 
 Meanwhile, the GameExpert does know the rules of the game it is playing, and ascribes prior beliefs about the quality of possibles moves. It  is abstract over game state (S) and the possible game actions (A). Search does not know the rules of the game it is playing; it simply samples availables actions with reference to the probablity that the expert model ascribes to them.
 
-## Installation
+## Installing Core Seraphim
 
-This distribution consists of two Dockerfiles. 
+The core Seraphim search library (in src/search) is agnostic to the implementation of the game expert. To use it as a library, you simply need to depend on the Seraphim crate and implement ` seraphim::search::GameExpert` and use it to initialize a new `seraphim::search::SearchTree` - which you can then sample to find next moves. Seraphim not yet published on crates.io; you can pull it and use it as a local crate if you want to use it now.
 
-One of them runs Tensorflow, and you need to install nvidia-docker to make it work
-https://github.com/NVIDIA/nvidia-docker
+### Running the Tic Tac Toe example
 
-On Ubuntu, after you install nvidia-docker, make sure you reload docker
+This repo also ships with an example game engine that learns how to play Tic Tac Toe. Located in in src/tictactoe, this example uses TensorFlow to implement a DNN.
 
-```
-sudo systemctl daemon-reload
-sudo systemctl restart docker
-```
+There are more system requirements to run the TTT trainer. Right now the example only works on Linux because it is set up to use nvidia-docker, which only works on Linux. (I welcome a patch to get this example training on Windows as well (with or without hardware acceleration)).
 
-Build the tictactoe training image:
-nvidia-docker build -f train/Dockerfile -t train .
+In total, you need
+1. A Linux host.
+2. A relatively recent version of the Docker engine. I have 18.09.1
+3. A relatively recent version of Docker-compose. The composerfile requires a minimum Compose version of 2.3.
+4. An nvidia NGC account to pull the nvidia docker image.
+5. nvidia-docker2
 
-Build the tictactoe playing image:
+The way this works is that you run a wrapper script, `./develop`. The first argument to `develop` is the name of the model you're workign with. The rest are arguments to `docker-compose`.
 
-`./develop`
+It's typically better to manage the action of the script in two console windows.
 
+Run the train container and initialize a new model with random weights:
+`./develop mymodel run train` 
+`src/tictactoe/train.py mymodel --init`
 
-Build the playing image:
-docker build -f play/Dockerfile -t play .
+Run the play container and generate games using the new model:
+`./develop mymodel run play`
+`cargo run --release --bin generate_games mymodel`
 
-## Running
+Allow some time to pass while game data accumulates, then in your train container:
+`src/tictactoe/train.py mymodel`
 
-Both the training script (train.py) and the playing script (generate_games.rs) expect game data to 
-be mounted to /gamedata and saved TF models to be mounted to /models. You can use Docker volumes or 
-bindmounts to store the data. I prefer a bindmount, because I find it useful to access the files 
-from other programs. 
-
-To bootstap the training process, initialize an empty model with random weights. (The game player requires
-a model to start generating game data, but it doesn't need a good one!)
-
-$model=NAME
-nvidia-docker run \
-    --mount=type=bind,src=$(pwd)/models,destination=/models \
-    --mount=type-bind,src=$(pwd)/gamedata,destination=/gamedata \
-    train $model --init
-
-Now you can start playing games
-docker run
-    --mount=type=bind,src=$(pwd)/models,destination=/models \
-    --mount=type-bind,src=$(pwd)/gamedata,destination=/gamedata \
-    play $model
-
-
-After the player has generated some game data (say, at least 10 batch files), you can start training it. 
-
-nvidia-docker run \
-    --mount=type=bind,src=$(pwd)/models,destination=/models \
-    --mount=type-bind,src=$(pwd)/gamedata,destination=/gamedata \
-    train $model
-
+You can play a game against mymodel with
+`cargo run --release --bin interactive mymodel`
 
 ## Docker cheat sheet (from https://docs.docker.com/get-started/part2/)
 docker build -t friendlyhello .  # Create image using this directory's Dockerfile

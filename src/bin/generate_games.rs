@@ -25,10 +25,10 @@ use std::io::{Read, Seek, Write};
 use std::path::Path;
 use std::process::exit;
 use std::result::Result;
-
+use std::time;
 use fs2::FileExt;
 
-static DEFAULT_GAMES_PER_FILE: i64 = 1000;
+static DEFAULT_GAMES_PER_FILE: i64 = 100;
 static DEFAULT_MAX_FILES: i64 = 50;
 static DEFAULT_OUTPUT_DIR: &'static str = "gamedata";
 static CONTROL_FILE: &'static str = "control";
@@ -220,6 +220,7 @@ fn do_some_games<W: Write>(
     options.tempering_point = 1;
     options.cpuct = exploration_coefficient;
 
+    let now = time::Instant::now();
     while count < num {
         if !running.load(Ordering::SeqCst) {
             break;
@@ -239,5 +240,9 @@ fn do_some_games<W: Write>(
         }
     }
     writer.flush();
+    let elapsed = now.elapsed();
+    let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1000_000_000.0);
+    println!("{} games in {:.2} sec ({:.2} games/sec)", count, sec, count as f64 / sec);
+
     Ok((count))
 }
