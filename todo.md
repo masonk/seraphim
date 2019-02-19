@@ -1,24 +1,23 @@
 Priority Queue:
     - Automatically initialize and train a model with one command
     - hardware accelerate inference
+    - loss = mse + cross_entropy + l2 regularization
+        - L2 regularization 10e-4
+    - fix the bogus model name created when initing a new model
+    - dirichlet noise (https://medium.com/oracledevs/lessons-from-alphazero-part-3-parameter-tweaking-4dceb78ed1e5)
     - drive model_name from $SERAPHIM_MODEL
-
     - summary metrics & checkpointing for Tensorboard   
         - accuracy metric
     - add to_win to the hypothesis api
-    - multithread search
-        - replace petgraph with a custom lockless search tree
+    - benchmarks
+        - profile performance
     - unit tests    
         - Do the posterior possibilities add to one?
         - testing framework for implementors
     - auto tournament for model comparison
-    - loss = mse + cross_entropy + l2 regularization
-    - dirichlet noise (https://medium.com/oracledevs/lessons-from-alphazero-part-3-parameter-tweaking-4dceb78ed1e5)
-    - L2 regularization 10e-4
+    - multithread search
+        - replace petgraph with a custom lockless search tree
 
-    - Why does 200 readouts of TTT consistently underperform 100 readouts?
-        - time cargo test expert::increasing_readouts -- --nocapture
-   
     - debug mode:
         - show loss for each net prediction (search - net)
         - allow initialization from any state saved in a file
@@ -29,7 +28,7 @@ Large Features:
         - lift as much logic as possible into seraphim core
             - Librarize the Python half that all lives in train.py atm
         - tfrecord proto gencode should be in core
-        - move to separate crate
+        - move TTT to separate crate
 
     contrib
         - Contribute TFReader

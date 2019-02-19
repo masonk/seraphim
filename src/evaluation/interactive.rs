@@ -90,6 +90,7 @@ where
     current_state: State,
     debug: bool,
     searcher: search::SearchTree<State, Action>,
+    options: search::SearchTreeOptions
 }
 
 impl<State, Action, Expert> InteractiveSession<State, Action, Expert>
@@ -108,7 +109,7 @@ where
         options: search::SearchTreeOptions,
     ) -> Self {
         let current_state = root.clone();
-        let searcher = search::SearchTree::init_with_options(root.clone(), options);
+        let searcher = search::SearchTree::init_with_options(root.clone(), options.clone());
         InteractiveSession {
             player1_type: PlayerType::Computer,
             player2_type: PlayerType::Human,
@@ -119,6 +120,7 @@ where
             root,
             current_state,
             searcher,
+            options
         }
     }
 
@@ -236,7 +238,8 @@ where
                         println!("{}", self.show_action_info(i, info));
                     }
                     let sec = (debug.time.as_secs() as f64) + (debug.time.subsec_nanos() as f64 / 1000_000_000.0);
-                    println!("Computed move in {:.3}s", sec);
+                    let per_sec =  self.options.readouts as f64 / sec;
+                    println!("{:.3}s ({:.2} readouts / s)", sec, per_sec);
                     
                     self.current_state = self.expert
                         .next(&self.current_state, &debug.results.selection);
