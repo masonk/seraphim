@@ -1,4 +1,4 @@
-FROM nvidia/cuda:10.0-cudnn7-devel-ubuntu16.04
+FROM nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04
 # TF docker (https://github.com/tensorflow/tensorflow/blob/master/tensorflow/tools/dockerfiles/dockerfiles/devel-gpu.Dockerfile)
 # uses cuda:10.0-base-ubuntu16.04, but we need full sources 
 # because later in this docker we are going to compile Tensorflow from scratch
@@ -26,7 +26,13 @@ RUN set -eux; \
     # these were needed by the mnistCUDNN demo
     libfreeimage3 \
     libfreeimage-dev \
+    # These two packages allow a TF to be built that run on multiple GPUs
+    # libnccl2 libnccl-dev \
+    # Seraphim depends on libssl via the openssl-sys crate (which I think is a transitive dep of ctrlc)
+    libssl-dev \ 
     make \
+    # Rust libssl crate uses pkg-config to find the openssl system headers
+    pkg-config \
     # bazel needs python2 https://github.com/tensorflow/tensorflow/issues/15618
     python \
     # tf needs swig
@@ -37,8 +43,11 @@ RUN set -eux; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
-# Tensorflow pukes when you try this with 0.22.0
-ENV BAZEL_VERSION 0.21.0
+# This version has to correspond to the appropriate bazel version
+# r1.12 can't be built with bazel 0.19 https://github.com/tensorflow/tensorflow/issues/23401#issuecomment-434681778
+# It also can't be built with any higher version of bazel that I tried
+# Note to self for the future: r1.13 can be built with bazel 0.21, but not 0.22
+ENV BAZEL_VERSION 0.18.0
 WORKDIR /
 RUN mkdir /bazel && \
     cd /bazel && \
@@ -53,9 +62,9 @@ RUN echo $(g++ --version)
 RUN echo $(bazel version)
 
 ### TENSORFLOW 
-# We can't build from the latest stable release (r1.13), because it tries to link libcuda and can't
+# rust-tensorflow works with r1.12
 # https://github.com/tensorflow/tensorflow/issues/25865
-ENV TENSORFLOW_VERSION master
+ENV TENSORFLOW_VERSION r1.12
 RUN git clone https://github.com/tensorflow/tensorflow.git && \
     cd tensorflow && \
     git checkout ${TENSORFLOW_VERSION}

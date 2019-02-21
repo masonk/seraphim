@@ -154,6 +154,7 @@ where
     }
 
     pub fn start_debug(&mut self, running: Arc<AtomicBool>) {
+        println!("Press enter to play the computer's move. Enter an integer of different action to play that. q quits.");
         'outer: while running.load(Ordering::SeqCst) {
             if let search::GameStatus::InProgress = self.current_state.status() {
                 println!("{}", self.current_state);
@@ -165,7 +166,10 @@ where
                 }
                 let hot = if debug.hot { "HOT" } else { "COLD " };
                 println!("Temperature is {}", hot);
-                println!("Computer would play {}. Press enter to play that. Enter an integer of different action to play that. q quits.", debug.results.selection);
+                println!("Computer would play {}.", debug.results.selection);
+                let sec = (debug.time.as_secs() as f64) + (debug.time.subsec_nanos() as f64 / 1000_000_000.0);
+                let per_sec =  self.options.readouts as f64 / sec;
+                println!("{:.3}s ({:.2} readouts / s)", sec, per_sec);
 
                 let next_action = Self::prompt_next_action_debug_info(&debug);
 

@@ -1,18 +1,10 @@
-FROM nvidia/cuda:10.0-cudnn7-devel-ubuntu16.04
+FROM nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04
 # TF docker (https://github.com/tensorflow/tensorflow/blob/master/tensorflow/tools/dockerfiles/dockerfiles/devel-gpu.Dockerfile)
 # uses cuda:10.0-base-ubuntu16.04, but we need full sources 
 # because later in this docker we are going to compile Tensorflow from scratch
 # using bazel.
-ARG HOST_UID
-ARG HOST_GID
-ARG WHO
-ARG SERAPHIM
 # so we aren't prompted to set up the keyboard and other nonsense
 ENV DEBIAN_FRONTEND noninteractive 
-ENV CARGO_HOME /rust/cargo
-ENV RUSTUP_HOME /rust/rustup
-ENV PATH=/rust/cargo/bin:$PATH
-ENV RUST_VERSION=1.32.0
 
 RUN set -eux; \
     apt-get update && apt-get install -y --no-install-recommends \
@@ -26,7 +18,13 @@ RUN set -eux; \
     # these were needed by the mnistCUDNN demo
     libfreeimage3 \
     libfreeimage-dev \
+    # These two packages allow a TF to be built that run on multiple GPUs
+    # libnccl2 libnccl-dev \
+    # Seraphim depends on libssl via the openssl-sys crate (which I think is a transitive dep of ctrlc)
+    libssl-dev \ 
     make \
+    # Rust libssl crate uses pkg-config to find the openssl system headers
+    pkg-config \
     # bazel needs python2 https://github.com/tensorflow/tensorflow/issues/15618
     python \
     # tf needs swig
@@ -37,8 +35,11 @@ RUN set -eux; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
-# Tensorflow pukes when you try this with 0.22.0
-ENV BAZEL_VERSION 0.21.0
+# This version has to correspond to the appropriate bazel version
+# r1.12 can't be built with bazel 0.19 https://github.com/tensorflow/tensorflow/issues/23401#issuecomment-434681778
+# It also can't be built with any higher version of bazel that I tried
+# Note to self for the future: r1.13 can be built with bazel 0.21, but not 0.22
+ENV BAZEL_VERSION 0.18.0
 WORKDIR /
 RUN mkdir /bazel && \
     cd /bazel && \
@@ -53,41 +54,34 @@ RUN echo $(g++ --version)
 RUN echo $(bazel version)
 
 ### TENSORFLOW 
-# We can't build from the latest stable release (r1.13), because it tries to link libcuda and can't
+# rust-tensorflow works with r1.12
 # https://github.com/tensorflow/tensorflow/issues/25865
-ENV TENSORFLOW_VERSION master
+ENV TENSORFLOW_VERSION r1.12
 RUN git clone https://github.com/tensorflow/tensorflow.git && \
     cd tensorflow && \
     git checkout ${TENSORFLOW_VERSION}
+# ENV PYTHON_LIB_PATH /usr/local/lib/python2.7/dist-packages
+# ENV PYTHONPATH /tensorflow/lib
+# ENV PYTHON_ARG /tensorflow/lib
 
-ENV PYTHON_LIB_PATH /usr/local/lib/python2.7/dist-packages
-ENV PYTHONPATH /tensorflow/lib
-ENV PYTHON_ARG /tensorflow/lib
-
-ENV GCC_HOST_COMPILER_PATH /usr/bin/gcc
-ENV CC_OPT_FLAGS="-march=native"
-ENV CUDA_TOOLKIT_PATH /usr/local/cuda
-ENV CUDNN_INSTALL_PATH /usr/lib/x86_64-linux-gnu
-ENV TF_CUDA_COMPUTE_CAPABILITIES 7.0 
-ENV TF_CUDNN_VERSION 7
-ENV TF_CUDA_VERSION 10.0
-ENV TF_NEED_GCP 0
-ENV TF_ENABLE_XLA 0
-ENV TF_NEED_OPENCL 0
+# ENV GCC_HOST_COMPILER_PATH /usr/bin/gcc
+# ENV CC_OPT_FLAGS="-march=native"
+# ENV CUDA_TOOLKIT_PATH /usr/local/cuda-10.0
+# ENV CUDNN_INSTALL_PATH /usr/local/cuda-10.0
+# ENV TF_CUDA_COMPUTE_CAPABILITIES 7.0 
+# ENV TF_CUDNN_VERSION 7.4
+# ENV TF_CUDA_VERSION 10.0
+# ENV TF_NEED_GCP 0
+# ENV TF_ENABLE_XLA 0
+# ENV TF_NEED_OPENCL 0
 ENV TF_NEED_CUDA 1
-ENV TF_CUDA_VERSION 10.0.0
-ENV TF_NEED_HDFS 0
-ENV TF_NEED_TENSORRT 0
-ENV TF_NCCL_VERSION 2
-ENV TF_BUILD_BRANCH master
-ENV TF_NEED_ROCM 0
-ENV TF_NEED_OPENCL_SYCL 0
-ENV TMP /tmp/tensorflow
-RUN echo "startup --batch" >>/etc/bazel.bazelrc
-RUN ln -s /usr/local/cuda-10.0/compat/libcuda.so.1 /usr/local/cuda/lib64/stubs/libcuda.so.1
-
-ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/local/cuda/lib64:/usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH}"
-RUN find / | grep  libcuda.so.1
+# ENV TF_NEED_HDFS 0
+# ENV TF_NEED_TENSORRT 0
+# ENV TF_NCCL_VERSION 2.3
+# ENV TF_BUILD_BRANCH master
+# ENV TF_NEED_ROCM 0
+# ENV TF_NEED_OPENCL_SYCL 0
+# ENV TMP /tmp/tensorflow
 
 WORKDIR /tensorflow
 RUN yes '' | ./configure
@@ -96,18 +90,31 @@ RUN yes '' | ./configure
 # Similarly, we need to workaround sandboxing issues:
 #   https://github.com/bazelbuild/bazel/issues/418
 
-RUN bazel build \
+# Context for this elaborate bazel invocation is here https://github.com/tensorflow/tensorflow/issues/25865
+# TLDR: tf <=1.13 links to libcuda.so.1 at build time, but those headers aren't available in the nvidia docker
+# at build time. (They are mounted in the running container, but not at build time). So we link to
+# stubs to satisfy the build-time linker.
+RUN export LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:$LD_LIBRARY_PATH && \
+    ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1 && \
+    bazel build \
     -c opt \
+    --action_env=LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
     --verbose_failures \
     --spawn_strategy=standalone \
     --genrule_strategy=standalone \
-    --action_env=LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
-    //tensorflow:libtensorflow.so
+    //tensorflow:libtensorflow.so && \
+    rm /usr/local/cuda/lib64/stubs/libcuda.so.1
 
 RUN cp bazel-bin/tensorflow/libtensorflow.so /usr/local/lib
 
+### Rust Nightly 
+ENV CARGO_HOME /rust/cargo
+ENV RUSTUP_HOME /rust/rustup
+ENV PATH=/rust/cargo/bin:$PATH
+ENV RUST_VERSION=1.32.0
+ENV CARGO_TARGET_DIR=/target
+
 RUN set -eux; \
-    ### Rust Nightly 1.32
     dpkgArch="$(dpkg --print-architecture)"; \
     case "${dpkgArch##*-}" in \
     amd64) rustArch='x86_64-unknown-linux-gnu'; rustupSha256='2d4ddf4e53915a23dda722608ed24e5c3f29ea1688da55aa4e98765fc6223f71' ;; \
@@ -122,9 +129,11 @@ RUN set -eux; \
     chmod +x rustup-init; \
     ./rustup-init -y --no-modify-path --default-toolchain $RUST_VERSION; \
     rm rustup-init; \
+    mkdir /target; \
     chmod a+x -R /rust; \
     chmod -R a+w ${RUSTUP_HOME} ; \
     chmod -R a+w ${CARGO_HOME} ; \
+    chmod -R a+rwx /target; \
     rustup install nightly; \
     rustup default nightly; \
     rustup --version; \
@@ -132,8 +141,16 @@ RUN set -eux; \
     rustc --version; \
     rustup install nightly; \
     rustup default nightly; \
-    rustup show; \
-    ### SERAPHIM ###
+    rustup show; 
+
+### SERAPHIM ###
+
+ARG HOST_UID
+ARG HOST_GID
+ARG WHO
+ARG SERAPHIM
+
+RUN set -eux; \
     groupadd ${WHO} -g ${HOST_GID}; \
     useradd -d /home/${WHO} -ms /bin/bash -g ${WHO} ${WHO}; \
     usermod -u ${HOST_UID} ${WHO}; \

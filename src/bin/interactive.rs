@@ -13,13 +13,14 @@ static MODEL_DIR_PREFIX: &'static str = "/models";
 
 fn main() {
     let matches = App::new("Interactive TicTacToe")
-            .about("Start an interactive session where the expert plays one side and the user plays the other half.")
+            .about("Play a session against the AI..")
             .arg(Arg::with_name("model_dir")
                 .help("The name of a directory under $SERAPHIM/models")
                 .required(true))
             .arg(Arg::with_name("debug")
+                .short("d")
                 .long("debug")
-                .help("In this mode, far more information is given about the inner workings of the expert. Meant for debugging models and evaluating training"))
+                .help("In this mode, debug information is printed for every move. You can chose the action for each ply. Meant for debugging models and evaluating training"))
             .arg(Arg::with_name("exploration_coefficient")
                 .help("A coefficient that controls how tree search should balance the tradeoff between exploiting good moves and exploring undersampled moves. Try somewhere in the range of [0.1, 10]")
                 .long("exploration_coefficient")
@@ -80,5 +81,9 @@ fn start_game(debug: bool, model_dir: String, exploration_coefficient: f32) {
         seraphim::tictactoe::State::new(),
         options,
     );
-    session.start_game(running)
+    if (debug) {
+        session.start_debug(running)
+    } else {
+        session.start_game(running)
+    }
 }

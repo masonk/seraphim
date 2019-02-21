@@ -10,8 +10,8 @@ services:
       args:
         # run the container as the current user so that permissions will work across the 
         # bindmount and so that the container doesn't have escalated privs.
-        # HOST_UID: "${HOST_UID}"
-        # HOST_GID: "${HOST_GID}"
+        HOST_UID: "${HOST_UID}"
+        HOST_GID: "${HOST_GID}"
         WHO: "${WHO}"
       context: "."
       dockerfile: "play/Dockerfile"
@@ -24,6 +24,7 @@ services:
       - SERAPHIM=/data # seraphim binaries look for and put their data in $SERAPHIM
       - HISTFILE=/bash/play_history
       - MODEL_NAME=${SERAPHIM_MODEL_NAME}
+      - CARGO_TARGET_DIR=/target
     working_dir: /seraphim
   train:
     command: /bin/bash
