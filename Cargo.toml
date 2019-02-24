@@ -14,13 +14,15 @@ flexi_logger = "*"
 petgraph = "*"
 rand = "*"
 lazy_static = "*"
-tensorflow = { version = "0.12.0", features = ["tensorflow_gpu"] }
+tensorflow = { version = "0.12.0"}
 clap = "*"
+structopt = "*"
 ctrlc = { version = "*", features = ["termination"] }
 protobuf = "*"
 crc32c = "*"
 byteorder = "*"
 fs2 = "*"
+# term_grid = "*"
 
 [profile.release]
 lto = true

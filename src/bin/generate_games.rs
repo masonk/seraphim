@@ -16,6 +16,7 @@ use clap::{App, Arg, SubCommand};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use fs2::FileExt;
 use std::env;
 use std::error::Error;
 use std::fs;
@@ -26,72 +27,69 @@ use std::path::Path;
 use std::process::exit;
 use std::result::Result;
 use std::time;
-use fs2::FileExt;
+#[macro_use]
+extern crate structopt;
+use structopt::StructOpt;
 
 static DEFAULT_GAMES_PER_FILE: i64 = 100;
 static DEFAULT_MAX_FILES: i64 = 50;
-static DEFAULT_OUTPUT_DIR: &'static str = "gamedata";
 static CONTROL_FILE: &'static str = "control";
 static MODEL_DIR_PREFIX: &'static str = "models";
 
 fn init_logger() {
     flexi_logger::Logger::with_env()
         // .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
-        .o_duplicate_info(true)
+        .duplicate_to_stderr(flexi_logger::Duplicate::Debug)
         .start()
         .unwrap();
 }
 // Generate new games of self-play from the champion of named model
+#[derive(Debug, StructOpt)]
+#[structopt(name = "interactive", about = "An interactive session of Tic Tac Toe.")]
+struct Config {
+    #[structopt(long, default_value = "100", help = "How many games in each tfrecord?")]
+    games_per_file: i64,
+
+    #[structopt(
+        long,
+        default_value = "50",
+        help = "How many .tfrecord files to keep in output_dir."
+    )]
+    max_files: i64,
+
+    #[structopt(short = "d", long)]
+    debug: bool,
+
+    #[structopt(
+        long,
+        help = "Write game data to this path instead of the default $SERAPHIM_DATA/gamedata/$SERAPHIM_MODEL_NAME"
+    )]
+    output_dir: Option<String>,
+
+    #[structopt(flatten)]
+    seraphim_config: seraphim::search::SeraphimConfig,
+
+    #[structopt(flatten)]
+    search_tree_options: seraphim::search::SearchTreeOptions,
+}
+
 fn main() {
     init_logger();
-    let matches = App::new("TicTacToe")
-                            .about("Plays games of tictactoe using the AlphaGo Zero algorithm and records the games as training examples.")
-                            .arg(Arg::with_name("model_dir")
-                                .help("The name of a directory under src/tictactoe/models")
-                                .required(true))
-                            .arg(Arg::with_name("output_dir")
-                                .help("Where does the generated data go")
-                                .long("output_dir")
-                                .takes_value(true))
-                            .arg(Arg::with_name("games_per_file")
-                                .help("How many games in each .tfrecord file")
-                                .long("games_per_file")
-                                .takes_value(true))
-                            .arg(Arg::with_name("max_files")
-                                .help("How many .tfrecord files to keep")
-                                .long("max_files")
-                                .takes_value(true))
-                             .arg(Arg::with_name("exploration_coefficient")
-                                .help("A coefficient that controls how tree search should balance the tradeoff between exploiting good moves and exploring undersampled moves. Try somewhere in the range of [0.1, 10]")
-                                .long("exploration_coefficient")
-                                .short("c")
-                                .takes_value(true))
-                            .get_matches();
-
-    let seraphim_dir = env::var("SERAPHIM").unwrap();
-    let model_dir = matches.value_of("model_dir").unwrap();
+    let opts = Config::from_args();
+    let config = opts.seraphim_config;
 
     let fq_model_dir = format!(
         "{}/{}/{}/{}/{}",
-        seraphim_dir, MODEL_DIR_PREFIX, model_dir, "champion", "saved_model"
+        config.seraphim_data, MODEL_DIR_PREFIX, &config.model_name, "champion", "saved_model"
     );
-    println!("{}", fq_model_dir);
-    let games_per_file = matches
-        .value_of("games_per_file")
-        .and_then(|v| v.parse::<i64>().ok())
-        .unwrap_or(DEFAULT_GAMES_PER_FILE);
-    let max_files = matches
-        .value_of("max_files")
-        .and_then(|v| v.parse::<i64>().ok())
-        .unwrap_or(DEFAULT_MAX_FILES);
-    let fq_default_output_dir = format!("{}/{}", seraphim_dir, DEFAULT_OUTPUT_DIR);
-    println!("{}", seraphim_dir);
-    println!("{}", fq_default_output_dir);
-    let output_dir = matches.value_of("output_dir").unwrap_or(&fq_default_output_dir);
-    let exploration_coefficient = matches
-        .value_of("exploration_coefficient")
-        .and_then(|c| c.parse::<f32>().ok())
-        .unwrap_or(5.0);
+    let lock_path = format!(
+        "{}/{}/{}/{}/{}",
+        config.seraphim_data, MODEL_DIR_PREFIX, &config.model_name, "champion", "lock"
+    );
+
+    let output_dir = opts
+        .output_dir
+        .unwrap_or_else(|| format!("{}/gamedata/{}", config.seraphim_data, config.model_name));
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -108,16 +106,12 @@ fn main() {
 
         let next_id = get_next_file_id(&output_dir).unwrap();
         println!("{}", next_id);
-        let next_file_path = format!("{}/batch-{:07}", output_dir, next_id);
-        let lock_path = format!(
-            "{}/{}/{}/{}/{}",
-            seraphim_dir, MODEL_DIR_PREFIX, model_dir, "champion", "lock"
-        );
+        let next_file_path = format!("{}/batch-{:07}", &output_dir, next_id);
 
         let lock = ::std::fs::OpenOptions::new()
             .write(true)
             .create(true)
-            .open(lock_path)
+            .open(&lock_path)
             .unwrap();
 
         lock.lock_exclusive();
@@ -134,15 +128,15 @@ fn main() {
         let mut ge = match seraphim::tictactoe::DnnGameExpert::from_saved_model(&fq_model_dir) {
             Ok(ge) => ge,
             Err(e) => {
-                panic!("Couldn't restore a model from '{}'. \nTry running '$SERAPHIM/src/tictactoe/init.py {}'\nError:\n{:?}", fq_model_dir, model_dir,  e);
+                panic!("Couldn't restore a model from '{}'. \nTry running 'src/tictactoe/train.py --init'\nError:\n{:?}", fq_model_dir,  e);
             }
         };
         lock.unlock();
         match do_some_games(
             &mut ge,
-            games_per_file,
+            opts.games_per_file,
             writer,
-            exploration_coefficient,
+            &opts.search_tree_options,
             running.clone(),
         ) {
             Ok(c) => count += c,
@@ -168,12 +162,12 @@ fn main() {
         )
         .unwrap();
 
-        if next_id - max_files >= 0 {
+        if next_id - opts.max_files >= 0 {
             stale_index
                 .write_fmt(format_args!(
                     "{}/batch-{:07}.tfrecord\n",
                     output_dir,
-                    next_id - max_files
+                    next_id - opts.max_files
                 ))
                 .unwrap();
         }
@@ -211,14 +205,10 @@ fn do_some_games<W: Write>(
     ge: &mut seraphim::tictactoe::DnnGameExpert,
     num: i64,
     mut writer: W,
-    exploration_coefficient: f32,
+    options: &seraphim::search::SearchTreeOptions,
     running: Arc<AtomicBool>,
 ) -> Result<i64, io::Error> {
     let mut count = 0;
-    let mut options = search::SearchTreeOptions::defaults();
-    options.readouts = 1500;
-    options.tempering_point = 1;
-    options.cpuct = exploration_coefficient;
 
     let now = time::Instant::now();
     while count < num {
@@ -231,7 +221,7 @@ fn do_some_games<W: Write>(
         let res = ge.play_and_record_one_game(searcher, &mut writer);
         if let Err(err) = res {
             error!("Error while playing a game: {:?}", err);
-            return Ok((count));
+            return Ok(count);
         }
 
         count += 1;
@@ -242,7 +232,12 @@ fn do_some_games<W: Write>(
     writer.flush();
     let elapsed = now.elapsed();
     let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1000_000_000.0);
-    println!("{} games in {:.2} sec ({:.2} games/sec)", count, sec, count as f64 / sec);
+    println!(
+        "{} games in {:.2} sec ({:.2} games/sec)",
+        count,
+        sec,
+        count as f64 / sec
+    );
 
-    Ok((count))
+    Ok(count)
 }

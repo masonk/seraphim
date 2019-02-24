@@ -7,7 +7,8 @@ pub mod evaluation;
 pub mod io;
 pub mod search;
 pub mod tictactoe;
-
+#[macro_use]
+extern crate structopt;
 #[macro_use]
 extern crate lazy_static;
 extern crate flexi_logger;

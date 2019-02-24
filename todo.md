@@ -1,11 +1,14 @@
 Priority Queue:
+    - dirichlet noise (https://medium.com/oracledevs/lessons-from-alphazero-part-3-parameter-tweaking-4dceb78ed1e5)
     - Automatically initialize and train a model with one command
-    - hardware accelerate inference
     - loss = mse + cross_entropy + l2 regularization
         - L2 regularization 10e-4
     - fix the bogus model name created when initing a new model
-    - dirichlet noise (https://medium.com/oracledevs/lessons-from-alphazero-part-3-parameter-tweaking-4dceb78ed1e5)
+
     - drive model_name from $SERAPHIM_MODEL
+    - hardware accelerate inference
+        - debug slow inference perf on gpu
+        - batching?
     - summary metrics & checkpointing for Tensorboard   
         - accuracy metric
     - add to_win to the hypothesis api

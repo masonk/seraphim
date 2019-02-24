@@ -7,6 +7,7 @@ use rand;
 use rand::Rng;
 use std::collections::HashMap;
 use std::time;
+use structopt;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GameStatus {
     InProgress,
@@ -26,7 +27,7 @@ where
     Action: self::Action,
 {
     pub action: Action,
-    pub prior: f32,               // The naive probability that this move is the best
+    pub prior: f32, // The naive probability that this move is the best
     pub raw_prior: f32,
     pub posterior: f32, // The improved probability that this move is the best after PUCT search
     pub total_visits: u32, // how many times has this line of play been sampled, in total
@@ -54,7 +55,7 @@ where
     Action: self::Action,
 {
     pub results: Vec<f32>, // the improved probabitly estimates after searching. The result at a given index is the result for the Action that returned
-    // that index from ActionIdx::index. 
+    // that index from ActionIdx::index.
     pub selection: Action, // which move did the engine select
     pub application_token: ApplicationToken,
 }
@@ -65,7 +66,7 @@ pub trait State:
     fn status(&self) -> GameStatus;
 }
 
-// search results will be returned as an array of 
+// search results will be returned as an array of
 pub trait ActionIdx {
     fn index(&self) -> usize;
 }
@@ -111,7 +112,7 @@ where
     // The results of search are returned as a vector of probabilities over the space of possible actions.
     // The action_space tells the cardinality of the (finite) set of possible actions for the game. E.g., in 19x19 Go, there are 363 possible actions -
     // 361 possible stone placements, pass, and resign. In a simple model of tic tac toe, there are 9.
-    // The vector of search results will be dense vector of this size, with one entry per action, including 
+    // The vector of search results will be dense vector of this size, with one entry per action, including
     fn max_actions(&mut self) -> usize;
 }
 
@@ -155,25 +156,63 @@ where
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct SearchTreeOptions {
-    pub cpuct: f32, // a constant determining the tradeoff between exploration and exploitation; .25 in the AGZ paper.
-    // Higher numbers bias the search towards less-explored nodes, lower numbers bias the search
-    // towards more promising nodes.
-    pub readouts: u32, // How many games to play when searching for a single move; 1600 in the AGZ paper.
-    pub tempering_point: u32, // how many plys should progress until we lower the temperature of move selection from 1
-                              // to ~0. 30 in the AGZ paper
+#[derive(Clone, Debug, PartialEq, StructOpt)]
+#[structopt(
+    name = "seraphim config",
+    about = "Basic configuration that must be defined for any seraphim program."
+)]
+pub struct SeraphimConfig {
+    #[structopt(env = "SERAPHIM_MODEL_NAME", long)]
+    pub model_name: String,
+
+    #[structopt(env = "SERAPHIM_DATA", long)]
+    pub seraphim_data: String,
 }
-impl SearchTreeOptions {
+
+#[derive(Clone, Debug, PartialEq, StructOpt)]
+#[structopt(
+    name = "search options",
+    about = "Hyperparamters for configuring tree search."
+)]
+pub struct SearchTreeOptions {
+    #[structopt(
+        long,
+        default_value = "0.25",
+        help = "A constant determining the tradeoff between exploration and exploitation. Higher values bias towards exploration."
+    )]
+    pub cpuct: f32,
+    #[structopt(
+        long = "raw",
+        help = "Play the game using raw scores from the expert, without searching. Often used with --readouts 0"
+    )]
+    pub use_raw_scores: bool,
+
+    #[structopt(
+        long,
+        default_value = "1600",
+        help = "How many games to sample while searching for the next move."
+    )]
+    pub readouts: u32,
+
+    #[structopt(
+        long,
+        default_value = "30",
+        help = "Move selection is tempered to always chose the highest probability move after this ply of the game."
+    )]
+    pub tempering_point: u32,
+}
+impl std::default::Default for SearchTreeOptions {
     // These defaults are the values used in the AGZ paper.
-    pub fn defaults() -> Self {
+    fn default() -> Self {
         Self {
+            use_raw_scores: false,
             cpuct: 0.25,
             readouts: 1600,
             tempering_point: 30,
         }
     }
 }
+
 #[derive(Debug)]
 pub struct SearchTree<State, Action>
 where
@@ -207,7 +246,7 @@ where
         }
     }
     pub fn init(initial_state: State) -> Self {
-        Self::init_with_options(initial_state, SearchTreeOptions::defaults())
+        Self::init_with_options(initial_state, SearchTreeOptions::default())
     }
 
     pub fn current_state_ref(&self) -> &State {
@@ -221,7 +260,8 @@ where
         game_expert: &mut GameExpert<State, Action>,
     ) -> SearchResultsDebugInfo<Action> {
         let now = time::Instant::now();
-        let child_edges_pre_read: Vec<Edge<Action>> = self.search_tree
+        let child_edges_pre_read: Vec<Edge<Action>> = self
+            .search_tree
             .neighbors(self.root_idx)
             .map(|child_node_idx| {
                 self.search_tree[self.parent_edge_idx(child_node_idx).unwrap()].clone()
@@ -235,7 +275,8 @@ where
 
         self.readout(game_expert);
 
-        let child_edges: Vec<Edge<Action>> = self.search_tree
+        let child_edges: Vec<Edge<Action>> = self
+            .search_tree
             .neighbors(self.root_idx)
             .map(|child_node_idx| {
                 self.search_tree[self.parent_edge_idx(child_node_idx).unwrap()].clone()
@@ -289,7 +330,8 @@ where
 
     // update the search tree by applying an action.
     pub fn apply(&mut self, action: &Action) {
-        let next_node_idx = self.search_tree
+        let next_node_idx = self
+            .search_tree
             .neighbors(self.root_idx)
             .find(|node_idx| {
                 &self.search_tree[self.parent_edge_idx(*node_idx).unwrap()].action == action
@@ -299,6 +341,7 @@ where
     }
 
     fn readout(&mut self, game_expert: &mut GameExpert<State, Action>) {
+        // Make sure we do at least one readout to force expansion of the graph.
         for _ in 0..self.options.readouts {
             self.read_to_end(self.root_idx, game_expert);
         }
@@ -308,13 +351,11 @@ where
     // After tempering, it just choses the next action with the highest count.
     fn select(&mut self, game_expert: &mut GameExpert<State, Action>) -> SearchResultsInfo<Action> {
         /*
-        Read the board by playing out a number of games according to the PUCB MCTS algorithm.
-
         Select a next move using the AGZ annealing method:
 
             At the end of the search AGZ selects a move to play
             in the root position proportional to its exponentiated visit count
-            p(a|s_0) = N(s_0, a)^{1/T} / \sum{b}N(s_0, b)^{1/T},  
+            p(a|s_0) = N(s_0, a)^{1/T} / \sum{b}N(s_0, b)^{1/T},
             where T is a temperature parameter. The search tree is reused at subsequent
             timesteps: the played action becomes the new root node, and other nodes are discarded.
 
@@ -327,12 +368,17 @@ where
 
         TODO: Include win probability as a feature.
         */
-        let self_ptr = self as *mut Self;
+
         let max_actions = game_expert.max_actions();
+        let self_ptr = self as *mut Self;
+        let mut guard = 0;
         loop {
             // There could be a fp error so that total probably is slightly less than 1. This almost never occurs, but if it does, we'll just resample.
-
-            let child_edges: Vec<(&Edge<Action>, NodeIdx)> = self.search_tree
+            if self.options.use_raw_scores {
+                self.expand(self.root_idx, game_expert);
+            }
+            let child_edges: Vec<(&Edge<Action>, NodeIdx)> = self
+                .search_tree
                 .neighbors(self.root_idx)
                 .map(|child_node_idx| {
                     (
@@ -341,9 +387,10 @@ where
                     )
                 })
                 .collect();
-            let mut results = vec![ 0.0; max_actions ];
+            let mut results = vec![0.0; max_actions];
 
-            let total_visit_count: u32 = self.search_tree
+            let total_visit_count: u32 = self
+                .search_tree
                 .neighbors(self.root_idx)
                 .map(|n| (self.parent_edge_idx(n).unwrap(), n))
                 .map(|(e, _)| {
@@ -352,9 +399,15 @@ where
                 })
                 .sum();
 
-            for (edge, _) in &child_edges {
-                let prob: f32 = (edge.visit_count as f32) / (total_visit_count as f32);
-                results[edge.action.index()]= prob;
+            if self.options.use_raw_scores {
+                for (edge, _) in &child_edges {
+                    results[edge.action.index()] = edge.raw_prior;
+                }
+            } else {
+                for (edge, _) in &child_edges {
+                    let prob: f32 = (edge.visit_count as f32) / (total_visit_count as f32);
+                    results[edge.action.index()] = prob;
+                }
             }
             if self.ply < self.options.tempering_point {
                 for (i, (edge, node_idx)) in child_edges.iter().enumerate() {
@@ -372,10 +425,21 @@ where
                     }
                 }
             } else {
-                let (selected_edge, selected_node) = child_edges
-                    .iter()
-                    .max_by_key(|(e, _)| e.visit_count)
-                    .unwrap();
+                let (selected_edge, selected_node) = if self.options.use_raw_scores {
+                    child_edges
+                        .iter()
+                        .max_by(|(a, _), (b, _)| {
+                            a.raw_prior
+                                .partial_cmp(&b.raw_prior)
+                                .unwrap_or(std::cmp::Ordering::Less)
+                        })
+                        .unwrap()
+                } else {
+                    child_edges
+                        .iter()
+                        .max_by_key(|(e, _)| e.visit_count)
+                        .unwrap()
+                };
 
                 let selection = selected_edge.action.clone();
                 return SearchResultsInfo {
@@ -383,6 +447,9 @@ where
                     selection,
                     application_token: ApplicationToken(*selected_node),
                 };
+            }
+            if guard > 5 {
+                panic!("infinite loop");
             }
         }
     }
@@ -422,7 +489,7 @@ where
         }
     }
 
-    /* 
+    /*
         The next node to sample is the node that maximizes
         exploration_stimulus = Q(s, a) + U(s, a)
 
@@ -430,7 +497,7 @@ where
 
         U(s, a) = cP(s,a)sqrt(Nb)/(1 + Na)
 
-        Q(s, a) is the average reward for exploring that node in the past. It is equal to wins/nb 
+        Q(s, a) is the average reward for exploring that node in the past. It is equal to wins/nb
 
         P is the prior probability that the action   is the best
         Na is the number of visits of to this edge,
@@ -439,14 +506,16 @@ where
     */
     fn exploration_stimulus(&self, edge: &Edge<Action>, parent_visits: u32) -> f32 {
         self.options.cpuct * edge.prior * f32::sqrt(parent_visits as f32)
-            / ((1 + edge.visit_count) as f32) + edge.average_value
+            / ((1 + edge.visit_count) as f32)
+            + edge.average_value
     }
     fn select_next_node(
         &self,
         idx: NodeIdx,
         game_expert: &mut GameExpert<State, Action>,
     ) -> NodeIdx {
-        let n_b: u32 = self.search_tree
+        let n_b: u32 = self
+            .search_tree
             .neighbors(idx)
             .map(|child_idx| self.parent_edge_idx(child_idx).unwrap())
             .map(|edge_idx| {
@@ -498,7 +567,8 @@ where
             }
         }
 
-        let (next_edge_idx, _) = self.search_tree
+        let (next_edge_idx, _) = self
+            .search_tree
             .neighbors(idx)
             .map(|node_idx| {
                 let edge_idx = self.parent_edge_idx(node_idx).unwrap();

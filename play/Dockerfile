@@ -29,6 +29,8 @@ RUN set -eux; \
     python \
     # tf needs swig
     swig \
+    #just for my own convenience, I like this package
+    tree \ 
     unzip \
     wget \
     zlib1g-dev; \
@@ -68,7 +70,7 @@ RUN git clone https://github.com/tensorflow/tensorflow.git && \
 # ENV CC_OPT_FLAGS="-march=native"
 # ENV CUDA_TOOLKIT_PATH /usr/local/cuda-10.0
 # ENV CUDNN_INSTALL_PATH /usr/local/cuda-10.0
-# ENV TF_CUDA_COMPUTE_CAPABILITIES 7.0 
+# ENV TF_CUDA_COMPUTE_CAPABILITIES 3 5 6 7 7.5
 # ENV TF_CUDNN_VERSION 7.4
 # ENV TF_CUDA_VERSION 10.0
 # ENV TF_NEED_GCP 0
@@ -98,6 +100,7 @@ RUN export LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:$LD_LIBRARY_PATH && \
     ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1 && \
     bazel build \
     -c opt \
+    --config="opt" \
     --action_env=LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
     --verbose_failures \
     --spawn_strategy=standalone \

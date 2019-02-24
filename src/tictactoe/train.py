@@ -60,22 +60,31 @@ It operates over this file structure:
     guaranteed to be a valid tfrecord.
 [10]: stale_files may contain a list of file paths that should be deleted before forming the next dataset.
 '''
+
+def env_or(key):
+    if os.environ.get(key):
+        return {'default': os.environ.get(key)}
+    else:
+        return {'required': True}
+
 parser = argparse.ArgumentParser(description='Initialize a TicTacToe expert model.')
-parser.add_argument('name', metavar='foo-model', help='Model prefix')
+parser.add_argument("--model_name", **env_or("SERAPHIM_MODEL_NAME"))
 parser.add_argument('--init', dest='init', action='store_true')
 parser.set_defaults(init=False)
 
 args = parser.parse_args()
 
-seraphim_dir = os.environ["SERAPHIM"]
-model_dir = seraphim_dir + "/models/" + args.name + "/"
+seraphim_data = os.environ.get("SERAPHIM_DATA")
+model_name = args.model_name
+
+model_dir = seraphim_data + "/models/" + model_name
+dataset_dir = seraphim_data + "/gamedata/" + model_name
 
 # save a new SavedModel to compete in the eternal tournament after running through this many epochs of training
 snapshot_epochs = 2500
 minibatch_size = 2048
 dense_layers = 5
 # take training examples (stored in TFRecord format) from files in this directory:
-dataset_dir = seraphim_dir + "/gamedata"
 
 def clean_up_stale_files(stale_files):
     for path in stale_files:

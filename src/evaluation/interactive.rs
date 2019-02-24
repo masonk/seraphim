@@ -52,26 +52,14 @@ pub struct Ply<State, Action> {
 // }
 
 // Implementing AsciiPlayable & AsciiDebuggable will enable seraphim to manage a text-based interactive game playing session
-trait AsciiPlayable<State, Action> {
-    fn move_picking_instructions() -> String; // How to read the action label grid and input a next move as a text string
-    fn action_labeled_grid(&State) -> String; // A grid
-    fn get_action_from_action_label(&str) -> Action; //
+trait Playable<State, Action> {
+    fn play(&self, action: Action);
+    fn next_player(&self) -> Player;
 }
-// Debuggability involves the display of debugging information, such as p values,
-// in addition to the basics necessary for playing a game.
-trait AsciiDebuggable<State, Action>: AsciiPlayable<State, Action> {}
-
-// GenericPlayable and GenericDebuggable are for games that have their own means of displaying & accepting information from
-// the user, such as by maintaining a connection to an external GUI process.
-// Seraphim will manage an interactive game play session between computer and player and prompt GenericPlayable
-// to display and collect certain information from the user to advance the game.
-trait GenericPlayable<State, Action> {
-    fn start_new_game();
+trait AsciiPlayable<State, Action> : Playable<State, Action> {
+    fn shell_prompt(&self) -> String; // This is printed in the terminal to prompt the next move
+    fn parse(&self, &str) -> Option<Action>;
 }
-
-// Debuggability involves the display of debugging information, such as p values,
-// in addition to the basics necessary for playing a game.
-trait GenericDebuggable<State, Action>: GenericPlayable<State, Action> {}
 
 pub struct InteractiveSession<State, Action, Expert>
 where
@@ -100,7 +88,7 @@ where
     Action: search::Action,
 {
     pub fn new(expert: Expert, root: State) -> Self {
-        Self::new_with_options(expert, root, search::SearchTreeOptions::defaults())
+        Self::new_with_options(expert, root, search::SearchTreeOptions::default())
     }
 
     pub fn new_with_options(
@@ -196,41 +184,20 @@ where
                 println!("{}", self.current_state);
                 println!("{}", self.show_next_player());
                 let hypotheses = self.expert.hypotheses(&self.current_state);
-                self.println(
-                    "",
-                    &format!(
-                        "Next player has {} probability of winning",
-                        hypotheses.to_win
-                    ),
-                );
 
                 if self.next_player_type() == PlayerType::Human {
-                    self.println(
-                        &self.show_available_actions(&hypotheses),
-                        &self.show_hypotheses(&hypotheses),
-                    );
+
+                    println!("{}", self.show_available_actions(&hypotheses));
+
                     let next_action_selection =
                         self.get_next_action_interactive(&hypotheses, &running);
                     let (next_action, _) = &hypotheses.legal_actions[next_action_selection];
                     self.searcher.apply(next_action);
                     self.current_state = self.expert.next(&self.current_state, next_action);
                 } else {
-                    //     pub candidates: Vec<CandidateActionDebugInformation>, // how many visits does each child node have
-                    //     pub results: SearchResultsInfo<Action>,
-                    //     pub tempered: bool, // was tempering in effect for move selection
-                    //     pub struct CandidateActionDebugInformation {
-                    //     pub prior: f32,               // The naive probability that this move is the best
-                    //     pub posterior: f32, // The improved probability that this move is the best after PUCT search
-                    //     pub total_visits: u32, // how many times has this line of play been sampled, in total
-                    //     pub visits_in_last_read: u32, // how many times was this line of play sampled in the most recent read
-                    //     pub average_value: f32,       // The average value of taking this action Q(s, a) in the paper
-                    //     pub total_value: f32,         // W(s, a) in the paper
+
                     let debug = &self.searcher.read_debug(&mut self.expert);
                     self.searcher.apply_search_results(&debug.results);
-                    if debug.hot {
-                        println!("(temp was hot for this search)");
-                    }
-
                     let prob_sum: f32 = debug.results.results.iter().sum();
                     if prob_sum < 0.0 {
                         println!(
@@ -238,22 +205,13 @@ where
                             1.0 - prob_sum
                         );
                     }
-                    for (i, info) in debug.candidates.iter().enumerate() {
-                        println!("{}", self.show_action_info(i, info));
-                    }
-                    let sec = (debug.time.as_secs() as f64) + (debug.time.subsec_nanos() as f64 / 1000_000_000.0);
-                    let per_sec =  self.options.readouts as f64 / sec;
-                    println!("{:.3}s ({:.2} readouts / s)", sec, per_sec);
                     
                     self.current_state = self.expert
                         .next(&self.current_state, &debug.results.selection);
                 }
 
                 self.next_player = self.next_player.other();
-            // self.push_history(Ply {
-            //     state: current_state,
-            //     action: next_action,
-            // });
+
             } else {
                 println!("{}", self.current_state);
                 if self.current_state.status() == search::GameStatus::LastPlayerWon {
@@ -339,15 +297,4 @@ where
         buf
     }
 
-    fn println(&self, string: &str, debug_string: &str) {
-        if self.debug {
-            if debug_string.len() > 0 {
-                println!("{}", debug_string);
-            }
-        } else {
-            if string.len() > 0 {
-                println!("{}", string);
-            }
-        }
-    }
 }
