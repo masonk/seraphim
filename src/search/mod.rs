@@ -201,13 +201,13 @@ pub struct SearchTreeParamOverrides {
     pub tempering_point: Option<u32>,
 
     #[structopt(long, help = "Noise coefficient for Dirichlet noise.")]
-    pub noise_coefficient: Option<f32>,
+    pub noise_coefficient: Option<f64>,
 
     #[structopt(
         long,
         help = "This is a in Dir(a). Set this value proportional to the number of available actions for an average move of the game. #actions * dirichet_alpha ~= 10"
     )]
-    pub dirichlet_alpha: Option<f32>,
+    pub dirichlet_alpha: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -216,8 +216,8 @@ pub struct SearchTreeOptions {
     pub use_raw_scores: bool,
     pub readouts: u32,
     pub tempering_point: u32,
-    pub noise_coefficient: f32,
-    pub dirichlet_alpha: f32,
+    pub noise_coefficient: f64,
+    pub dirichlet_alpha: f64,
 }
 impl std::default::Default for SearchTreeOptions {
     // These defaults are the values used in the AGZ paper.
@@ -672,10 +672,13 @@ where
             }
 
             let scale = 1.0 / total_probability; // Ok to divide by because at least one action must have non-zero probability
-
-            for (action, raw_prior) in legal_actions {
+            let noise =
+                Dirichlet::new_with_param(self.options.dirichlet_alpha, legal_actions.len());
+            let sample = noise.sample(&mut rand::thread_rng());
+            for (i, (action, raw_prior)) in legal_actions.into_iter().enumerate() {
                 let new_state = game_expert.next(&self.search_tree[node_idx].state, &action);
-
+                let e = self.options.noise_coefficient;
+                let noised_prior = (scale * raw_prior * (1.0 - e)) + e * sample[i];
                 unsafe {
                     let leaf_idx = (*self_ptr)
                         .search_tree
@@ -686,7 +689,7 @@ where
                         leaf_idx,
                         Edge {
                             action,
-                            prior: scale * raw_prior,
+                            prior: noised_prior,
                             raw_prior,
                             visit_count: 0,
                             total_value: 0.0,

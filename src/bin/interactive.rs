@@ -6,8 +6,6 @@ extern crate structopt;
 extern crate rand;
 extern crate seraphim;
 
-use rand::distributions::Dirichlet;
-use rand::prelude::*;
 use structopt::StructOpt;
 
 use fs2::FileExt;
