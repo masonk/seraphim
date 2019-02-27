@@ -8,31 +8,23 @@ extern crate seraphim;
 
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate structopt;
 
 use seraphim::search;
 extern crate ctrlc;
 
-use clap::{App, Arg, SubCommand};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use fs2::FileExt;
-use std::env;
-use std::error::Error;
-use std::fs;
-use std::fs::File;
 use std::io;
 use std::io::{Read, Seek, Write};
-use std::path::Path;
-use std::process::exit;
 use std::result::Result;
 use std::time;
-#[macro_use]
-extern crate structopt;
+
 use structopt::StructOpt;
 
-static DEFAULT_GAMES_PER_FILE: i64 = 100;
-static DEFAULT_MAX_FILES: i64 = 50;
 static CONTROL_FILE: &'static str = "control";
 static MODEL_DIR_PREFIX: &'static str = "models";
 
@@ -44,7 +36,7 @@ fn init_logger() {
         .unwrap();
 }
 // Generate new games of self-play from the champion of named model
-#[derive(Debug, StructOpt)]
+#[derive(Debug, StructOpt, Clone)]
 #[structopt(name = "interactive", about = "An interactive session of Tic Tac Toe.")]
 struct Config {
     #[structopt(long, default_value = "100", help = "How many games in each tfrecord?")]
@@ -70,13 +62,16 @@ struct Config {
     seraphim_config: seraphim::search::SeraphimConfig,
 
     #[structopt(flatten)]
-    search_tree_options: seraphim::search::SearchTreeOptions,
+    search_tree_options: seraphim::search::SearchTreeParamOverrides,
 }
 
 fn main() {
     init_logger();
     let opts = Config::from_args();
     let config = opts.seraphim_config;
+    let mut overrides = opts.search_tree_options;
+    overrides.dirichlet_alpha.get_or_insert(0.6);
+    let search_tree_options = seraphim::search::SearchTreeOptions::from_overrides(overrides);
 
     let fq_model_dir = format!(
         "{}/{}/{}/{}/{}",
@@ -100,7 +95,7 @@ fn main() {
     .expect("Error setting Ctrl-C handler");
 
     let mut count = 0;
-
+    let mut draws = 0;
     'outer: while running.load(Ordering::SeqCst) {
         ::std::fs::create_dir_all(&output_dir).unwrap();
 
@@ -114,7 +109,7 @@ fn main() {
             .open(&lock_path)
             .unwrap();
 
-        lock.lock_exclusive();
+        let _ = lock.lock_exclusive();
 
         let file = ::std::fs::OpenOptions::new()
             .write(true)
@@ -123,7 +118,7 @@ fn main() {
             .open(next_file_path.clone())
             .unwrap();
 
-        let mut writer = ::std::io::BufWriter::new(file);
+        let writer = ::std::io::BufWriter::new(file);
 
         let mut ge = match seraphim::tictactoe::DnnGameExpert::from_saved_model(&fq_model_dir) {
             Ok(ge) => ge,
@@ -131,15 +126,18 @@ fn main() {
                 panic!("Couldn't restore a model from '{}'. \nTry running 'src/tictactoe/train.py --init'\nError:\n{:?}", fq_model_dir,  e);
             }
         };
-        lock.unlock();
+        let _ = lock.unlock();
         match do_some_games(
             &mut ge,
             opts.games_per_file,
             writer,
-            &opts.search_tree_options,
+            &search_tree_options,
             running.clone(),
         ) {
-            Ok(c) => count += c,
+            Ok((c, d)) => {
+                count += c;
+                draws += d;
+            }
             Err(err) => {
                 println!("{:?}", err);
                 break;
@@ -175,7 +173,7 @@ fn main() {
         lock.unlock().unwrap();
     }
 
-    println!("saved {} games", count);
+    println!("Drew {} / {} games", draws, count);
 }
 
 fn get_next_file_id(output_dir: &str) -> io::Result<i64> {
@@ -187,7 +185,7 @@ fn get_next_file_id(output_dir: &str) -> io::Result<i64> {
 
     let mut buf = Vec::new();
     control.read_to_end(&mut buf)?;
-    let mut val;
+    let val;
 
     if buf.len() == 0 {
         val = 0;
@@ -207,10 +205,11 @@ fn do_some_games<W: Write>(
     mut writer: W,
     options: &seraphim::search::SearchTreeOptions,
     running: Arc<AtomicBool>,
-) -> Result<i64, io::Error> {
+) -> Result<(i64, usize), io::Error> {
     let mut count = 0;
-
+    let mut draws = 0;
     let now = time::Instant::now();
+
     while count < num {
         if !running.load(Ordering::SeqCst) {
             break;
@@ -221,15 +220,22 @@ fn do_some_games<W: Write>(
         let res = ge.play_and_record_one_game(searcher, &mut writer);
         if let Err(err) = res {
             error!("Error while playing a game: {:?}", err);
-            return Ok(count);
+            return Ok((count, draws));
+        } else if let Ok(status) = res {
+            match status {
+                seraphim::search::GameStatus::Draw => {
+                    draws += 1;
+                }
+                _ => {}
+            }
         }
 
         count += 1;
         if count % 1000 == 0 {
-            writer.flush();
+            let _ = writer.flush();
         }
     }
-    writer.flush();
+    let _ = writer.flush();
     let elapsed = now.elapsed();
     let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1000_000_000.0);
     println!(
@@ -238,6 +244,7 @@ fn do_some_games<W: Write>(
         sec,
         count as f64 / sec
     );
+    println!("Drew {} / {}", draws, count);
 
-    Ok(count)
+    Ok((count, draws))
 }

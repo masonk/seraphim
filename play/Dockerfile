@@ -15,6 +15,7 @@ RUN set -eux; \
     g++ \
     gcc \
     git \
+    less \
     # these were needed by the mnistCUDNN demo
     libfreeimage3 \
     libfreeimage-dev \
@@ -101,6 +102,7 @@ RUN export LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:$LD_LIBRARY_PATH && \
     bazel build \
     -c opt \
     --config="opt" \
+    --copt=-mavx --copt=-mavx2 --copt=-mfma --copt=-mfpmath=both --copt=-msse4.2 \
     --action_env=LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
     --verbose_failures \
     --spawn_strategy=standalone \

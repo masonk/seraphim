@@ -1,17 +1,21 @@
 Priority Queue:
+    - investigate j-curve in readouts:
+        - 100 has more draws than 600
+        - it starts going up again around 2000, nearing 100% draws by 10,0000
+        
     - dirichlet noise (https://medium.com/oracledevs/lessons-from-alphazero-part-3-parameter-tweaking-4dceb78ed1e5)
-    - Automatically initialize and train a model with one command
     - loss = mse + cross_entropy + l2 regularization
         - L2 regularization 10e-4
+    - add to_win to the hypothesis api
+
+    - Automatically initialize and train a model with one command
     - fix the bogus model name created when initing a new model
 
-    - drive model_name from $SERAPHIM_MODEL
     - hardware accelerate inference
         - debug slow inference perf on gpu
         - batching?
     - summary metrics & checkpointing for Tensorboard   
         - accuracy metric
-    - add to_win to the hypothesis api
     - benchmarks
         - profile performance
     - unit tests    
@@ -22,7 +26,6 @@ Priority Queue:
         - replace petgraph with a custom lockless search tree
 
     - debug mode:
-        - show loss for each net prediction (search - net)
         - allow initialization from any state saved in a file
         - better (user-defined) parsing of next action in interactive games
 

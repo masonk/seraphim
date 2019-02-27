@@ -3,15 +3,17 @@
 //! Consumers of the Seraphim library are to implement the GameExpert trait, and pass an instance of GameExpert
 //! to SearchTree.
 use petgraph;
-use rand;
-use rand::Rng;
+use rand::distributions::Dirichlet;
+use rand::prelude::*;
 use std::collections::HashMap;
 use std::time;
 use structopt;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GameStatus {
     InProgress,
-    TerminatedWithoutResult,
+    NullResult,
+    Draw,
     LastPlayerWon,
     LastPlayerLost,
 }
@@ -174,32 +176,48 @@ pub struct SeraphimConfig {
     name = "search options",
     about = "Hyperparamters for configuring tree search."
 )]
-pub struct SearchTreeOptions {
+pub struct SearchTreeParamOverrides {
     #[structopt(
         long,
-        default_value = "0.25",
         help = "A constant determining the tradeoff between exploration and exploitation. Higher values bias towards exploration."
     )]
-    pub cpuct: f32,
+    pub cpuct: Option<f32>,
     #[structopt(
         long = "raw",
         help = "Play the game using raw scores from the expert, without searching. Often used with --readouts 0"
     )]
-    pub use_raw_scores: bool,
+    pub use_raw_scores: Option<bool>,
 
     #[structopt(
         long,
-        default_value = "1600",
         help = "How many games to sample while searching for the next move."
     )]
-    pub readouts: u32,
+    pub readouts: Option<u32>,
 
     #[structopt(
         long,
-        default_value = "30",
         help = "Move selection is tempered to always chose the highest probability move after this ply of the game."
     )]
+    pub tempering_point: Option<u32>,
+
+    #[structopt(long, help = "Noise coefficient for Dirichlet noise.")]
+    pub noise_coefficient: Option<f32>,
+
+    #[structopt(
+        long,
+        help = "This is a in Dir(a). Set this value proportional to the number of available actions for an average move of the game. #actions * dirichet_alpha ~= 10"
+    )]
+    pub dirichlet_alpha: Option<f32>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchTreeOptions {
+    pub cpuct: f32,
+    pub use_raw_scores: bool,
+    pub readouts: u32,
     pub tempering_point: u32,
+    pub noise_coefficient: f32,
+    pub dirichlet_alpha: f32,
 }
 impl std::default::Default for SearchTreeOptions {
     // These defaults are the values used in the AGZ paper.
@@ -207,8 +225,25 @@ impl std::default::Default for SearchTreeOptions {
         Self {
             use_raw_scores: false,
             cpuct: 0.25,
-            readouts: 1600,
+            readouts: 800,
             tempering_point: 30,
+            dirichlet_alpha: 0.03,
+            noise_coefficient: 0.25,
+        }
+    }
+}
+impl SearchTreeOptions {
+    pub fn from_overrides(overrides: SearchTreeParamOverrides) -> Self {
+        let default = Self::default();
+        Self {
+            use_raw_scores: overrides.use_raw_scores.unwrap_or(default.use_raw_scores),
+            cpuct: overrides.cpuct.unwrap_or(default.cpuct),
+            readouts: overrides.readouts.unwrap_or(default.readouts),
+            tempering_point: overrides.tempering_point.unwrap_or(default.tempering_point),
+            dirichlet_alpha: overrides.dirichlet_alpha.unwrap_or(default.dirichlet_alpha),
+            noise_coefficient: overrides
+                .noise_coefficient
+                .unwrap_or(default.noise_coefficient),
         }
     }
 }
@@ -219,7 +254,7 @@ where
     State: self::State,
     Action: self::Action,
 {
-    rand: rand::ThreadRng,
+    rand: rand::rngs::ThreadRng,
     search_tree: petgraph::stable_graph::StableGraph<Node<State>, Edge<Action>>,
     ply: u32,          // how many plys have been played at the root_idx
     root_idx: NodeIdx, // cur
@@ -479,7 +514,7 @@ where
                     match status {
                         GameStatus::LastPlayerLost => self.backup(0.0, node_idx),
                         GameStatus::LastPlayerWon => self.backup(1.0, node_idx),
-                        GameStatus::TerminatedWithoutResult => self.backup(0.5, node_idx),
+                        GameStatus::Draw => self.backup(0.5, node_idx),
                         _ => {
                             warn!("Tried to backup some unknown terminal state. Algorithm error. ")
                         }

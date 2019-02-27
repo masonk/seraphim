@@ -82,7 +82,7 @@ mod test {
                         searcher.apply_results(&results);
                         game.play(next).unwrap();
                     } else {
-                        if game.status == GameStatus::TerminatedWithoutResult {
+                        if game.status == GameStatus::NullResult {
                             draw += 1;
                         }
                         break;
@@ -118,7 +118,7 @@ mod test {
                         let next = search.read_and_apply(&mut game_expert);
                         game.play(next).unwrap();
                     } else {
-                        if game.status == GameStatus::TerminatedWithoutResult {
+                        if game.status == GameStatus::NullResult {
                             draw += 1;
                         }
                         break;

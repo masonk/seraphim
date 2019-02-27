@@ -79,7 +79,8 @@ impl State {
         let mut plys = 0;
         let mut count = 0;
         let mut winner = GameStatus::InProgress;
-        for (i, c) in s.chars()
+        for (i, c) in s
+            .chars()
             .filter(|c| !c.is_whitespace() && *c != '|')
             .enumerate()
             .take(9)
@@ -158,7 +159,7 @@ impl State {
         // trace!("{} at {}\n{}\n", Self::to_mark(player), idx, self);
         self.plys += 1;
         self.status = match self.plys {
-            9 => GameStatus::TerminatedWithoutResult,
+            9 => GameStatus::Draw,
             _ => GameStatus::InProgress,
         };
         Ok(())

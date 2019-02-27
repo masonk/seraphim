@@ -14,6 +14,7 @@ import signal
 import tensorflow as tf
 import fcntl
 
+from tensorflow.python import debug as tf_debug
 from tensorflow.python.saved_model.signature_constants import REGRESS_METHOD_NAME, PREDICT_METHOD_NAME
 from tensorflow.python.saved_model.signature_def_utils import build_signature_def
 from tensorflow.python.saved_model.tag_constants import TRAINING, SERVING
@@ -70,6 +71,8 @@ def env_or(key):
 parser = argparse.ArgumentParser(description='Initialize a TicTacToe expert model.')
 parser.add_argument("--model_name", **env_or("SERAPHIM_MODEL_NAME"))
 parser.add_argument('--init', dest='init', action='store_true')
+parser.add_argument("--debug", dest="debug", action="store_true")
+parser.set_defaults(init=False)
 parser.set_defaults(init=False)
 
 args = parser.parse_args()
@@ -128,7 +131,7 @@ def parse(bytes):
               "choice": tf.FixedLenSequenceFeature((), tf.float32, allow_missing=True)}
   parsed_features = tf.parse_single_example(bytes, features)
   game = tf.decode_raw(parsed_features["game"], tf.uint8)
-  choice =  parsed_features["choice"]
+  choice = parsed_features["choice"]
   return tf.reshape(game, [19]), tf.reshape(choice, [9])
 
 def write_summaries(write_training_summaries, summaries, global_step_val):
@@ -137,8 +140,8 @@ def write_summaries(write_training_summaries, summaries, global_step_val):
 def write_snapshot(sess, saver, global_step_val, snapshot_id=None):
     if snapshot_id is None:
         snapshot_id = "{}-{}".format(datetime.datetime.now().replace(microsecond=0).isoformat(), global_step_val)
-    snapshot_dir = model_dir + snapshot_id + "/"
-    saver_dir = model_dir + snapshot_id + "/checkpoints/"
+    snapshot_dir = model_dir + "/" + snapshot_id + "/"
+    saver_dir = model_dir + "/" + snapshot_id + "/checkpoints/"
     saver_prefix = saver_dir + "model"
     try:
         os.makedirs(saver_dir)
@@ -205,6 +208,8 @@ def save_savedmodel(sess, snapshot_dir):
     # builder.save(as_text=False)
 
 def train(sess):
+    if args.debug:
+        sess = tf_debug.LocalCLIDebugWrapperSession(sess)
     saver_dir = model_dir + "champion/checkpoints/"
     saver_prefix = saver_dir + "model"
     latest_checkpoint = tf.train.latest_checkpoint(saver_dir)
@@ -322,8 +327,8 @@ def init_model(sess):
     # collections = [ops.GraphKeys.VARIABLES + ops.GraphKeys.TRAINABLE_VARIABLES]
     # for key in collections:
     #     graph.add_to_collection(key, self)
-    write_snapshot(sess, saver, global_step, "champion")
-    write_snapshot(sess, saver, global_step)
+    write_snapshot(sess, saver, 0, "champion")
+    write_snapshot(sess, saver, 0)
 
 class catch_sigint(object):
     def __init__(self):

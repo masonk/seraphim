@@ -3,17 +3,19 @@ extern crate ctrlc;
 extern crate fs2;
 #[macro_use]
 extern crate structopt;
+extern crate rand;
+extern crate seraphim;
+
+use rand::distributions::Dirichlet;
+use rand::prelude::*;
 use structopt::StructOpt;
 
 use fs2::FileExt;
-use std::env;
 use std::fs::File;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-extern crate seraphim;
 
 static MODEL_DIR_PREFIX: &'static str = "models";
-static CONTROL_FILE: &'static str = "control";
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "interactive", about = "An interactive session of Tic Tac Toe.")]
@@ -25,17 +27,20 @@ struct Config {
     seraphim_config: seraphim::search::SeraphimConfig,
 
     #[structopt(flatten)]
-    search_tree_options: seraphim::search::SearchTreeOptions,
+    search_tree_options: seraphim::search::SearchTreeParamOverrides,
 }
 
 fn main() {
     let config = Config::from_args();
-
     start_game(config);
 }
 
 fn start_game(config: Config) {
     let seraphim = config.seraphim_config;
+    let mut overrides = config.search_tree_options;
+    overrides.dirichlet_alpha.get_or_insert(0.6);
+    let search_tree_options = seraphim::search::SearchTreeOptions::from_overrides(overrides);
+
     let fq_model_dir = format!(
         "{}/{}/{}/{}/{}",
         seraphim.seraphim_data, MODEL_DIR_PREFIX, seraphim.model_name, "champion", "saved_model"
@@ -71,7 +76,7 @@ fn start_game(config: Config) {
     let mut session = seraphim::evaluation::interactive::InteractiveSession::new_with_options(
         ge,
         seraphim::tictactoe::State::new(),
-        config.search_tree_options.clone(),
+        search_tree_options.clone(),
     );
     if config.debug {
         session.start_debug(running)

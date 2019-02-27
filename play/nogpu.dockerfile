@@ -1,5 +1,46 @@
 FROM rust:1.32
 
+# This version has to correspond to the appropriate bazel version
+# r1.12 can't be built with bazel 0.19 https://github.com/tensorflow/tensorflow/issues/23401#issuecomment-434681778
+# It also can't be built with any higher version of bazel that I tried
+# Note to self for the future: r1.13 can be built with bazel 0.21, but not 0.22
+ENV BAZEL_VERSION 0.18.0
+WORKDIR /
+RUN mkdir /bazel && \
+    cd /bazel && \
+    wget https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-installer-linux-x86_64.sh && \
+    # curl -fSsL -o /bazel/LICENSE.txt https://raw.githubusercontent.com/bazelbuild/bazel/master/LICENSE.txt && \
+    chmod +x bazel-*.sh && \
+    ./bazel-$BAZEL_VERSION-installer-linux-x86_64.sh && \
+    cd / && \
+    rm -f /bazel/bazel-$BAZEL_VERSION-installer-linux-x86_64.sh
+
+RUN echo $(g++ --version)
+RUN echo $(bazel version)
+
+### TENSORFLOW 
+# rust-tensorflow works with r1.12
+# https://github.com/tensorflow/tensorflow/issues/25865
+ENV TENSORFLOW_VERSION r1.12
+RUN git clone https://github.com/tensorflow/tensorflow.git && \
+    cd tensorflow && \
+    git checkout ${TENSORFLOW_VERSION}
+
+ENV TF_NEED_CUDA 0
+WORKDIR /tensorflow
+RUN yes '' | ./configure
+
+#   https://github.com/bazelbuild/bazel/issues/418
+
+RUN bazel build --config=opt -c opt //tensorflow:libtensorflow.so //tensorflow:libtensorflow_framework.so
+# --copt=-mfma -k --copt=-mavx --copt=-mavx2 --copt=-msse4.2 --copt=-msse4.1 --linkopt='-lrt' \
+
+RUN cp bazel-bin/tensorflow/libtensorflow.so bazel-bin/tensorflow/libtensorflow_framework.so /usr/local/lib 
+RUN ldconfig
+RUN tensorflow/c/generate-pc.sh --prefix=/usr/local --version=$TENSORFLOW_VERSION
+RUN mv tensorflow.pc /usr/lib/pkgconfig
+RUN pkg-config --libs tensorflow
+
 ### Rust Nightly 
 ENV CARGO_HOME /rust/cargo
 ENV RUSTUP_HOME /rust/rustup

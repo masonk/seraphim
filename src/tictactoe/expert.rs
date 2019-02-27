@@ -52,7 +52,7 @@ impl DnnGameExpert {
         &mut self,
         mut searcher: search::SearchTree<State, usize>,
         dest: &mut W,
-    ) -> Result<(), TicTacToeError> {
+    ) -> Result<search::GameStatus, TicTacToeError> {
         let mut writer = io::tf::RecordWriter::new(dest);
         loop {
             if let search::GameStatus::InProgress = searcher.current_state_ref().status {
@@ -86,7 +86,7 @@ impl DnnGameExpert {
                 break;
             }
         }
-        Ok(())
+        Ok(searcher.current_state_ref().status.clone())
     }
 
     fn state_tensor(state: &State) -> tf::Tensor<u8> {
@@ -313,7 +313,7 @@ mod expert {
                 search::SearchTree::init_with_options(initial_search_state, options.clone());
 
             let game = ge.play_one_game(searcher).unwrap();
-            if game.status == GameStatus::TerminatedWithoutResult {
+            if game.status == GameStatus::NullResult {
                 draw += 1;
             }
         }
@@ -338,7 +338,8 @@ mod basic {
             _ _ _
             _ _ _
             _ _ _",
-        ).expect("Couldn't parse an empty board");
+        )
+        .expect("Couldn't parse an empty board");
     }
 
     #[test]
@@ -349,7 +350,8 @@ mod basic {
             o x o
             _ x _
             _ o _",
-        ).expect("Couldn't parse");
+        )
+        .expect("Couldn't parse");
     }
 
     #[test]
@@ -360,7 +362,8 @@ mod basic {
             o x x
             _ x x
             o o o",
-        ).expect("Couldn't parse");
+        )
+        .expect("Couldn't parse");
 
         trace!("{}", state);
 
@@ -376,7 +379,8 @@ mod basic {
             o x o
             _ x _
             _ x _",
-        ).expect("Couldn't parse");
+        )
+        .expect("Couldn't parse");
 
         trace!("{}", state);
     }
@@ -389,7 +393,8 @@ mod basic {
             x _ x
             o x o
             _ o x",
-        ).expect("Couldn't parse");
+        )
+        .expect("Couldn't parse");
 
         trace!("{}", state);
 
@@ -405,7 +410,8 @@ mod basic {
             _ x o
             _ o _
             o x x",
-        ).expect("Couldn't parse");
+        )
+        .expect("Couldn't parse");
 
         trace!("{}", state);
 
