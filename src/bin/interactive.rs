@@ -37,6 +37,7 @@ fn start_game(config: Config) {
     let seraphim = config.seraphim_config;
     let mut overrides = config.search_tree_options;
     overrides.dirichlet_alpha.get_or_insert(0.6);
+    overrides.cpuct.get_or_insert(1.5);
     let search_tree_options = seraphim::search::SearchTreeOptions::from_overrides(overrides);
 
     let fq_model_dir = format!(

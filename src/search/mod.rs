@@ -29,8 +29,9 @@ where
     Action: self::Action,
 {
     pub action: Action,
-    pub prior: f32, // The naive probability that this move is the best
-    pub raw_prior: f32,
+    pub prior: f32,               // Prior after scaling and noise
+    pub raw_prior: f32,           // scaled to a probability distribution
+    pub scaled_prior: f32,        // prior after scaling
     pub posterior: f32, // The improved probability that this move is the best after PUCT search
     pub total_visits: u32, // how many times has this line of play been sampled, in total
     pub visits_in_last_read: u32, // how many times was this line of play sampled in the most recent read
@@ -131,7 +132,8 @@ where
     Action: self::Action,
 {
     action: Action,     // The Action that this edge represents.
-    prior: f32, // P(s, a). The prior probability of choosing this node, derived from the expert guess.
+    prior: f32,         // The effective prior, after scaling and Dirichlet noise.
+    scaled_prior: f32, // P(s, a). The prior probability of choosing this node, derived from the expert guess.
     raw_prior: f32, // The raw prior we got from the net, before rescaling legal actions to 1. Used for debugging.
     visit_count: u32, // N(s, a) in the AGZ paper. How many times has the action that this edge represents been tried so far?
     total_value: f32, // W(s, a) in the AGZ paper. The total value of an action over all the times it's been tried.
@@ -201,7 +203,7 @@ pub struct SearchTreeParamOverrides {
     pub tempering_point: Option<u32>,
 
     #[structopt(long, help = "Noise coefficient for Dirichlet noise.")]
-    pub noise_coefficient: Option<f64>,
+    pub noise_coefficient: Option<f32>,
 
     #[structopt(
         long,
@@ -216,7 +218,7 @@ pub struct SearchTreeOptions {
     pub use_raw_scores: bool,
     pub readouts: u32,
     pub tempering_point: u32,
-    pub noise_coefficient: f64,
+    pub noise_coefficient: f32,
     pub dirichlet_alpha: f64,
 }
 impl std::default::Default for SearchTreeOptions {
@@ -333,6 +335,7 @@ where
                 action: edge.action.clone(),
                 prior: edge.prior,
                 raw_prior: edge.raw_prior,
+                scaled_prior: edge.scaled_prior,
                 posterior: (edge.visit_count as f32) / (total_visit_count as f32),
                 total_visits: edge.visit_count,
                 visits_in_last_read: edge.visit_count - pre_read_visit_count,
@@ -670,15 +673,26 @@ where
             for (_, p) in &legal_actions {
                 total_probability += p;
             }
-
+            let c = self.options.noise_coefficient;
             let scale = 1.0 / total_probability; // Ok to divide by because at least one action must have non-zero probability
-            let noise =
-                Dirichlet::new_with_param(self.options.dirichlet_alpha, legal_actions.len());
-            let sample = noise.sample(&mut rand::thread_rng());
+            let effective_priors: Vec<f32> = if legal_actions.len() > 1 {
+                let dist =
+                    Dirichlet::new_with_param(self.options.dirichlet_alpha, legal_actions.len());
+                let sample = dist.sample(&mut rand::thread_rng());
+
+                legal_actions
+                    .iter()
+                    .zip(sample)
+                    .map(|((_, p), n)| ((*p) * scale * (1.0 - c)) + (n as f32 * c))
+                    .collect()
+            } else {
+                legal_actions.iter().map(|(_, p)| *p).collect()
+            };
+
             for (i, (action, raw_prior)) in legal_actions.into_iter().enumerate() {
                 let new_state = game_expert.next(&self.search_tree[node_idx].state, &action);
                 let e = self.options.noise_coefficient;
-                let noised_prior = (scale * raw_prior * (1.0 - e)) + e * sample[i];
+
                 unsafe {
                     let leaf_idx = (*self_ptr)
                         .search_tree
@@ -689,7 +703,8 @@ where
                         leaf_idx,
                         Edge {
                             action,
-                            prior: noised_prior,
+                            prior: effective_priors[i],
+                            scaled_prior: raw_prior * scale,
                             raw_prior,
                             visit_count: 0,
                             total_value: 0.0,
