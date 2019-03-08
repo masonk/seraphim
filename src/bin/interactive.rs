@@ -1,4 +1,3 @@
-extern crate clap;
 extern crate ctrlc;
 extern crate fs2;
 #[macro_use]

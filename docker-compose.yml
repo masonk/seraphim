@@ -4,7 +4,9 @@ services:
   play:
     # stdin_open: true
     # tty: true
-    command: /bin/bash
+    command: lldb-server platform --server --listen "0.0.0.0:5000" --gdbserver-port 5001
+    user: "${WHO}"
+    privileged: true
     build: 
       args:
         # run the container as the current user so that permissions will work across the 
@@ -14,6 +16,9 @@ services:
         WHO: "${WHO}"
       context: "."
       dockerfile: "play/nogpu.dockerfile"
+    ports:
+      - "5000:5000"
+      - "5001:5001"
     volumes:
       - '.:/seraphim'
       - 'rust:/rust' # rust toolchain & build cache
@@ -26,34 +31,12 @@ services:
       - CARGO_TARGET_DIR=/target
       - RUST_BACKTRACE=1
     working_dir: /seraphim
-  play-gpu:
-    # stdin_open: true
-    # tty: true
+  train:
+    stdin_open: true
+    tty: true
     command: /bin/bash
     runtime: nvidia
-    build: 
-      args:
-        # run the container as the current user so that permissions will work across the 
-        # bindmount and so that the container doesn't have escalated privs.
-        HOST_UID: "${HOST_UID}"
-        HOST_GID: "${HOST_GID}"
-        WHO: "${WHO}"
-      context: "."
-      dockerfile: "play/Dockerfile"
-    volumes:
-      - '.:/seraphim'
-      - 'rust:/rust' # rust toolchain & build cache
-      - 'bash:/bash' # bash history
-      - 'data:/data' # model and game data
-    environment:
-      - SERAPHIM_DATA=/data # seraphim binaries read from and write to files in $SERAPHIM_DATA
-      - SERAPHIM_MODEL_NAME=${SERAPHIM_MODEL_NAME}
-      - HISTFILE=/bash/play_history
-      - CARGO_TARGET_DIR=/target
-    working_dir: /seraphim
-  train:
-    command: /bin/bash
-    runtime: nvidia 
+    user: "${WHO}"
     # NOTE: The SHMEM allocation limit is set to the default of 64MB.  This may be
     # insufficient for TensorFlow.  NVIDIA recommends the use of the following flags:
     # nvidia-docker run --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 ...
@@ -66,6 +49,8 @@ services:
         WHO: "${WHO}"
       context: "."
       dockerfile: "train/Dockerfile"
+    ports:
+      - "127.0.0.1:5006:5006"
     volumes:
       - '.:/seraphim'
       - 'bash:/bash' # bash history

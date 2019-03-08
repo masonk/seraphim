@@ -1,9 +1,55 @@
-FROM rust:1.32
+FROM ubuntu:18.04
+# using 18.04 to get a higher version of lldb
+# lldb-4 (highest in 16.04) has a broken lldb-server
+
 
 # This version has to correspond to the appropriate bazel version
 # r1.12 can't be built with bazel 0.19 https://github.com/tensorflow/tensorflow/issues/23401#issuecomment-434681778
 # It also can't be built with any higher version of bazel that I tried
 # Note to self for the future: r1.13 can be built with bazel 0.21, but not 0.22
+RUN set -eux; \
+    apt-get update && apt-get install -y --no-install-recommends \
+    autoconf \
+    automake \
+    build-essential \
+    # wget over https
+    ca-certificates \
+    g++ \
+    gcc \
+    # pull tensorflow
+    git \
+    # convenience
+    less \
+    # these were needed by the mnistCUDNN demo
+    libfreeimage3 \
+    libfreeimage-dev \
+    # These two packages allow a TF to be built that run on multiple GPUs
+    # libnccl2 libnccl-dev \
+    # Seraphim depends on libssl via the openssl-sys crate (which I think is a transitive dep of ctrlc)
+    libssl-dev \ 
+    # debugger
+    lldb-7 \
+    gdbserver \
+    make \
+    # Rust libssl crate uses pkg-config to find the openssl system headers
+    pkg-config \
+    # bazel needs python2 https://github.com/tensorflow/tensorflow/issues/15618
+    python \
+    # rust wrapper around lldb that formats code nicely
+    rust-lldb \
+    # tf needs swig
+    swig \
+    #just for my own convenience, I like this package
+    tree \ 
+    unzip \
+    wget \
+    zlib1g-dev; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
+
+RUN ln -s /usr/bin/lldb-7 /usr/bin/lldb
+RUN ln -s /usr/bin/lldb-server-7 /usr/bin/lldb-server
+
 ENV BAZEL_VERSION 0.18.0
 WORKDIR /
 RUN mkdir /bazel && \
@@ -93,5 +139,3 @@ RUN set -eux; \
     chown -R ${WHO}:${WHO} /bash; \
     mkdir /data; \
     chown -R ${WHO}:${WHO} /data
-
-USER ${WHO}

@@ -31,7 +31,7 @@ lto = true
 lto = true
 
 [profile.dev]
-opt-level = 2
+# opt-level = 2
 codegen-units = 4
 
 [build-dependencies]

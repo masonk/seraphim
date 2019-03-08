@@ -379,7 +379,6 @@ where
     }
 
     fn readout(&mut self, game_expert: &mut GameExpert<State, Action>) {
-        // Make sure we do at least one readout to force expansion of the graph.
         for _ in 0..self.options.readouts {
             self.read_to_end(self.root_idx, game_expert);
         }

@@ -1,9 +1,9 @@
 Priority Queue:
+-   - Why does search favor move 0 over the symmetrical moves 2, 6, 8
     - investigate j-curve in readouts:
         - 100 has more draws than 600
         - it starts going up again around 2000, nearing 100% draws by 10,0000
         
-    - dirichlet noise (https://medium.com/oracledevs/lessons-from-alphazero-part-3-parameter-tweaking-4dceb78ed1e5)
     - loss = mse + cross_entropy + l2 regularization
         - L2 regularization 10e-4
     - add to_win to the hypothesis api
