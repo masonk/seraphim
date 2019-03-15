@@ -1,4 +1,4 @@
-//! This module implements informed Monte Carlo tree search. "Informed" means that the search is guided by an expert policy
+//! This module implements informed Monte Carlo Tree Search. "Informed" means that the search is guided by an expert policy
 //! that ascribes Bayesian prior probabilities to question of whether each possible next action is the best one.
 //! Consumers of the Seraphim library are to implement the GameExpert trait, and pass an instance of GameExpert
 //! to SearchTree.
@@ -324,7 +324,7 @@ where
             })
             .collect();
 
-        let total_visit_count : usize = child_edges.iter().map(|e| e.visit_count).sum();
+        let total_visit_count = self.search_tree[self.root_idx].visits;
 
         let mut candidates: Vec<CandidateActionDebugInformation<Action>> =
             Vec::with_capacity(child_edges.len());
@@ -391,12 +391,12 @@ where
 
     fn readout(&mut self, game_expert: &mut GameExpert<State, Action>) {
         for _ in 0..self.options.readouts {
-            self.read_to_end(self.root_idx, game_expert);
+            self.read_to_end(game_expert);
         }
     }
-    // After visitation is done, it's time to select the next action that will actually be played.
-    // The AGZ algorithm uses tempering. Before tempering, it selects the next action with probability proportional to visit counts.
-    // After tempering, it just choses the next action with the highest count.
+    // After sampling is done, it's time to select the next action that will actually be played.
+    // The AGZ algorithm uses tempering. Before tempering, it selects the next actions in proportion to the number of times each action was sampled.
+    // After tempering, it choses the next action with the highest number of samples.
     fn select(&mut self, game_expert: &mut GameExpert<State, Action>) -> SearchResultsInfo<Action> {
         /*
         Select a next move using the AGZ annealing method:
@@ -437,15 +437,7 @@ where
                 .collect();
             let mut results = vec![0.0; max_actions];
 
-            let total_visit_count : usize = self
-                .search_tree
-                .neighbors(self.root_idx)
-                .map(|n| (self.parent_edge_idx(n).unwrap(), n))
-                .map(|(e, _)| {
-                    let edge = self.search_tree.edge_weight(e).unwrap();
-                    edge.visit_count
-                })
-                .sum();
+            let total_visit_count = self.search_tree[self.root_idx].visits;
 
             if self.options.use_raw_scores {
                 for (edge, _) in &child_edges {
@@ -504,39 +496,7 @@ where
 
     fn advance_to_node(&mut self, node: NodeIdx) {
         self.ply += 1;
-        self.root_idx = node; // TODO: Remove all nodes that are made unreachable due to advancing down the tree.
-    }
-
-    // recursively follow the search to a terminal node (A node where GameStatus is not InProgress),
-    // then back up the tree, updating edge weights.f
-    fn read_to_end(&mut self, node_idx: NodeIdx, game_expert: &mut GameExpert<State, Action>) {
-        let self_ptr = self as *mut Self;
-        unsafe {
-            let node = (*self_ptr).search_tree.node_weight_mut(node_idx).unwrap();
-            let status = node.state.status();
-            node.visits += 1;
-            
-            match status {
-                GameStatus::InProgress => {
-                    if !node.expanded {
-                        self.expand(node_idx, game_expert);
-                    }
-                    let next_idx = self.select_next_node(node_idx, game_expert);
-
-                    return self.read_to_end(next_idx, game_expert);
-                }
-                _ => {
-                    match status {
-                        GameStatus::LastPlayerLost => self.backup(0, 1, node_idx),
-                        GameStatus::LastPlayerWon => self.backup(1, 0, node_idx),
-                        GameStatus::Draw => {},
-                        _ => {
-                            warn!("Tried to backup some unknown terminal state. Algorithm error. ")
-                        }
-                    };
-                }
-            }
-        }
+        self.root_idx = node; // TODO: During a normal game, we can save memory by forgetting all nodes that are above the analysis root: those paths will not be further explored.
     }
 
     /*
@@ -556,50 +516,39 @@ where
     */
     
     fn exploration_stimulus(&self, edge: &Edge<Action>, parent_visits: usize) -> f64 {
-        let p = edge.prior as f64;
-        let n = edge.visit_count + 1;
-        let w = edge.wins as i64 - edge.losses as i64;
+        let N = parent_visits as f64; // how many times the parent state has been visited
+        let n = edge.visit_count as f64 + 1.0f64; // how many times this action has been explored from the parent state
 
-        let q = w as f64 / n as f64;
+        let p = edge.prior as f64; // prior probability that this action is the best available
+        let w = edge.wins as i64 - edge.losses as i64;
+        let q = w as f64 / n as f64; 
         
         let c = self.options.cpuct as f64;
-        let N = parent_visits as f64;
-        let n = edge.visit_count as f64;
-        let u = c * p * (N.ln() / (1.0f64 + n)).sqrt();
+        let u = c * p * (N.ln() / n).sqrt();
 
         return q + u;
     }
-    fn select_next_node(
+    
+    // We always sample the node that has the highest exploration_stimulus, as described above
+    fn next_node_to_sample(
         &self,
         idx: NodeIdx,
         game_expert: &mut GameExpert<State, Action>,
     ) -> NodeIdx {
-        let n_b: usize = self
-            .search_tree
-            .neighbors(idx)
-            .map(|child_idx| self.parent_edge_idx(child_idx).unwrap())
-            .map(|edge_idx| {
-                if let Some(edge) = self.search_tree.edge_weight(edge_idx) {
-                    return edge.visit_count;
-                }
-                debug!(
-                    "PROBLEM: NO PARENT FOR CHILD OF:\n{}",
-                    self.search_tree[idx].state
-                );
-                panic!();
-            })
-            .sum();
 
-        let (next_edge_idx, _) = self
+        let parent_visits: usize = self.search_tree[idx].visits;
+            
+        let explorations = self
             .search_tree
             .neighbors(idx)
             .map(|node_idx| {
                 let edge_idx = self.parent_edge_idx(node_idx).unwrap();
                 let edge = &self.search_tree[edge_idx];
-                let exploration_stimulus = self.exploration_stimulus(&edge, n_b);
+                let exploration_stimulus = self.exploration_stimulus(&edge, parent_visits);
                 (edge_idx, exploration_stimulus)
-            })
-            .max_by(
+            });
+
+        let (idx_with_max_stimulus, _) = explorations.max_by(
                 |&(_, exploration_stimulus_a), &(_, exploration_stimulus_b)| {
                     exploration_stimulus_a
                         .partial_cmp(&exploration_stimulus_b)
@@ -608,9 +557,10 @@ where
             )
             .unwrap();
 
-        let (_, next_node_idx) = self.search_tree.edge_endpoints(next_edge_idx).unwrap();
+        let (_, next_node_idx) = self.search_tree.edge_endpoints(idx_with_max_stimulus).unwrap();
         next_node_idx
     }
+
     fn parent_node_idx(&self, idx: NodeIdx) -> Option<NodeIdx> {
         self.search_tree
             .neighbors_directed(idx, petgraph::Direction::Incoming)
@@ -630,16 +580,49 @@ where
         Some((parent_node.unwrap(), parent_edge))
     }
 
-    fn backup(&mut self, win: usize, loss: usize, node_idx: NodeIdx) {
+    // follow the search to a terminal node (A node where GameStatus is not InProgress),
+    // then back up the tree to the current analysis root (e.g., the state of the game as it has played out thus far),
+    // updating win, loss, and visit counts.
+    fn read_to_end(&mut self, game_expert: &mut GameExpert<State, Action>) {
+        let self_ptr = self as *mut Self;
+        unsafe {
+            let mut node_idx = (*self_ptr).root_idx;
+            let mut node_weight = &(*self_ptr).search_tree[node_idx];
+
+            while node_weight.state.status() == GameStatus::InProgress {
+                if !node_weight.expanded {
+                    self.expand(node_idx, game_expert);
+                }
+                node_idx = self.next_node_to_sample(node_idx, game_expert);
+                node_weight = &(*self_ptr).search_tree[node_idx];
+            }
+            self.backup(node_idx);
+        }
+    }
+    // record the result of a single readout up to the analysis root, which during normal operation
+    // is the node representating the current state of the game as it has evolved so far. In other words,
+    // it is the node we're starting our search from.
+    fn backup(&mut self, node_idx: NodeIdx) {
+        let node_weight = &self.search_tree[node_idx];
+        let status = node_weight.state.status();
+        let mut win = match status {
+            GameStatus::LastPlayerWon => 1,
+            _ => 0,
+        };
+        let mut loss = match status {
+            GameStatus::LastPlayerLost => 1,
+            _ => 0
+        };
         let mut node_idx = node_idx;
-        let mut win = win;
-        let mut loss = loss;
         loop {
             let parent = self.parent(node_idx);
             if parent.is_none() {
                 break;
             }
             let (parent_node_idx, parent_edge_idx) = parent.unwrap();
+            if parent_node_idx == self.root_idx {
+                break;
+            }
             let parent_edge_weight = self.search_tree.edge_weight_mut(parent_edge_idx).unwrap();
 
             parent_edge_weight.wins += win;
@@ -651,7 +634,7 @@ where
             node_idx = parent_node_idx;
         }
     }
-    // Create an edge and a node for each possible move from this position
+    // For each possible action from the current state (node_idx), create a new node and edge representing the application of that action.
     fn expand(&mut self, node_idx: NodeIdx, game_expert: &mut GameExpert<State, Action>) {
         {
             let node = &self.search_tree[node_idx];

@@ -15,7 +15,7 @@ services:
         HOST_GID: "${HOST_GID}"
         WHO: "${WHO}"
       context: "."
-      dockerfile: "play/nogpu.dockerfile"
+      dockerfile: "play/notf.dockerfile"
     ports:
       - "5000:5000"
       - "5001:5001"
@@ -35,7 +35,7 @@ services:
     stdin_open: true
     tty: true
     command: /bin/bash
-    runtime: nvidia
+    # runtime: nvidia
     user: "${WHO}"
     # NOTE: The SHMEM allocation limit is set to the default of 64MB.  This may be
     # insufficient for TensorFlow.  NVIDIA recommends the use of the following flags:
