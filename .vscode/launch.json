@@ -11,7 +11,7 @@
             "cwd": "/seraphim",
             "program": "${workspaceRoot}/target/debug/hist",
             "args": [
-                "1"
+                "1000"
             ],
             "env": {
                 "SERAPHIM_DATA": "/data",
@@ -19,6 +19,7 @@
                 "RUSTUP_HOME": "/rust/rustup",
                 "CARGO_HOME": "/rust/cargo",
                 "CARGO_TARGET_DIR": "/target",
+                "RUST_LOG": "seraphim=trace" // ,generate_games,hist,interactive,tfrecord_viewer"
             },
             "initCommands": [
                 "platform select remote-linux",

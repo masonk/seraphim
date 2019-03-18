@@ -11,6 +11,7 @@ pub mod tictactoe;
 extern crate structopt;
 #[macro_use]
 extern crate lazy_static;
+
 extern crate flexi_logger;
 extern crate left_pad;
 extern crate regex;

@@ -225,7 +225,7 @@ impl search::GameExpert<State, usize> for DnnGameExpert {
     // This has to come after multi-threading the search, since threads block
     // while waiting for their batch to accumulate.
     fn hypotheses(&mut self, state: &State) -> search::Hypotheses<usize> {
-        debug!("{}", state);
+        debug!("\n{}", state);
         let example = self.graph.operation_by_name_required("example").unwrap();
         let softmax = self.graph.operation_by_name_required("softmax").unwrap();
         let training = self.graph.operation_by_name_required("training").unwrap();

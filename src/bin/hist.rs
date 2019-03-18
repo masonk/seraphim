@@ -1,18 +1,16 @@
 extern crate ctrlc;
 extern crate fs2;
-#[macro_use]
-extern crate structopt;
 extern crate rand;
 extern crate seraphim;
+extern crate structopt;
 
 use structopt::StructOpt;
 
-use fs2::FileExt;
 use seraphim::search;
-use std::fs::File;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 static MODEL_DIR_PREFIX: &'static str = "models";
+extern crate flexi_logger;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "interactive", about = "An interactive session of Tic Tac Toe.")]
@@ -54,7 +52,16 @@ impl std::default::Default for Counts {
     }
 }
 
+fn init_logger() {
+    flexi_logger::Logger::with_env()
+        // .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
+        .duplicate_to_stderr(flexi_logger::Duplicate::Debug)
+        .start()
+        .unwrap();
+}
+
 fn main() {
+    init_logger();
     let config = Config::from_args();
     let out = config.out.unwrap_or(format!(
         "{}/histograms/{}/hist.csv",

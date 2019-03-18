@@ -30,6 +30,7 @@ services:
       - SERAPHIM_MODEL_NAME=${SERAPHIM_MODEL_NAME}
       - CARGO_TARGET_DIR=/target
       - RUST_BACKTRACE=1
+      - RUST_LOG=seraphim,generate_games,hist,interactive,tfrecord_viewer
     working_dir: /seraphim
   train:
     stdin_open: true

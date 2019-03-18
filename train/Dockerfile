@@ -1,5 +1,5 @@
-# FROM nvcr.io/nvidia/tensorflow:19.01-py3
-FROM tensorflow/tensorflow:1.13-py3
+FROM nvcr.io/nvidia/tensorflow:19.01-py3
+# FROM tensorflow/tensorflow:1.13-py3
 ARG HOST_UID
 ARG HOST_GID
 ARG WHO

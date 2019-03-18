@@ -3,7 +3,8 @@
 //! Consumers of the Seraphim library are to implement the GameExpert trait, and pass an instance of GameExpert
 //! to SearchTree.
 use petgraph;
-use rand::distributions::Dirichlet;
+use rand::distributions::{Dirichlet, Distribution, Uniform};
+
 use rand::prelude::*;
 use std::collections::HashMap;
 use std::time;
@@ -29,17 +30,17 @@ where
     Action: self::Action,
 {
     pub action: Action,
-    pub prior: f32,               // Prior after scaling and noise
-    pub raw_prior: f32,           // scaled to a probability distribution
-    pub scaled_prior: f32,        // prior after scaling
-    pub posterior: f32,           // The improved probability that this move is the best after PUCT search
-    pub total_visits: usize,        // how many times has this line of play been sampled, in total
+    pub prior: f32,          // Prior after scaling and noise
+    pub raw_prior: f32,      // scaled to a probability distribution
+    pub scaled_prior: f32,   // prior after scaling
+    pub posterior: f32, // The improved probability that this move is the best after PUCT search
+    pub total_visits: usize, // how many times has this line of play been sampled, in total
     pub wins: usize,
     pub losses: usize,
     pub visits_in_last_read: usize, // how many times was this line of play sampled in the most recent read
-    pub average_value: f64,       // The average value of taking this action Q(s, a) in the paper
+    pub average_value: f64,         // The average value of taking this action Q(s, a) in the paper
     pub exploration_stimulus: f64, // How badly does the search tree want to explore this action in the future?
-                                   // The highest value of here is the node it would sample next if asked to perform more readouts.                                
+                                   // The highest value of here is the node it would sample next if asked to perform more readouts.
 }
 
 #[derive(Debug)]
@@ -137,9 +138,9 @@ where
     scaled_prior: f32, // P(s, a). The prior probability of choosing this node, derived from the expert guess.
     raw_prior: f32, // The raw prior we got from the net, before rescaling legal actions to 1. Used for debugging.
     visit_count: usize, // # games played from this position
-    wins: usize,        // Wins from this position
-    losses: usize,      // Losses from this position
-    // average_value: f64, // Q(s, a) in the AGZ paper. The average value of an action over all the times it's been tried. Equal to total_value / visit_count.
+    wins: usize,    // Wins from this position
+    losses: usize,  // Losses from this position
+                    // average_value: f64, // Q(s, a) in the AGZ paper. The average value of an action over all the times it's been tried. Equal to total_value / visit_count.
 }
 
 #[derive(Debug)]
@@ -261,6 +262,7 @@ where
     Action: self::Action,
 {
     rand: rand::rngs::ThreadRng,
+    uniform: Uniform<f32>,
     search_tree: petgraph::stable_graph::StableGraph<Node<State>, Edge<Action>>,
     ply: u32,          // how many plys have been played at the root_idx
     root_idx: NodeIdx, // cur
@@ -284,6 +286,7 @@ where
             options,
             root_idx,
             rand: rand::thread_rng(),
+            uniform: Uniform::<f32>::from(0.0..1.0),
         }
     }
     pub fn init(initial_state: State) -> Self {
@@ -335,7 +338,7 @@ where
                 .map(|e| e.visit_count)
                 .unwrap_or(0);
             let stimulus = self.exploration_stimulus(&edge, total_visit_count);
-            
+
             let n = edge.visit_count;
             let w = edge.wins as i64 - edge.losses as i64;
 
@@ -420,11 +423,11 @@ where
         let max_actions = game_expert.max_actions();
         let self_ptr = self as *mut Self;
         let mut guard = 0;
+
         loop {
+            guard += 1;
+
             // There could be a fp error so that total probably is slightly less than 1. This almost never occurs, but if it does, we'll just resample.
-            if self.options.use_raw_scores {
-                self.expand(self.root_idx, game_expert);
-            }
             let child_edges: Vec<(&Edge<Action>, NodeIdx)> = self
                 .search_tree
                 .neighbors(self.root_idx)
@@ -435,6 +438,13 @@ where
                     )
                 })
                 .collect();
+
+            if cfg!(debug_assertions) {
+                trace!("Edges during selection:");
+                for edge in &child_edges {
+                    trace!("{:?}", edge);
+                }
+            }
             let mut results = vec![0.0; max_actions];
 
             let total_visit_count = self.search_tree[self.root_idx].visits;
@@ -446,14 +456,14 @@ where
             } else {
                 for (edge, _) in &child_edges {
                     let prob: f32 = (edge.visit_count as f32) / (total_visit_count as f32);
+                    trace!("{} / {}", edge.visit_count, total_visit_count);
                     results[edge.action.index()] = prob;
                 }
             }
             if self.ply < self.options.tempering_point {
+                let mut cum_prob = 0.0;
+                let rand: f32 = unsafe { self.uniform.sample(&mut (*self_ptr).rand) }; // Ok, because we don't rely any other state in for random number gen
                 for (i, (edge, node_idx)) in child_edges.iter().enumerate() {
-                    let rand: f32 = unsafe { (*self_ptr).rand.gen_range(0.0, 1.0) }; // Ok, because we don't rely any other state in for random number gen
-                    let mut cum_prob = 0.0;
-
                     cum_prob += results[edge.action.index()];
                     if cum_prob > rand {
                         let selection = edge.action.clone();
@@ -488,8 +498,11 @@ where
                     application_token: ApplicationToken(*selected_node),
                 };
             }
-            if guard > 5 {
-                panic!("infinite loop");
+            if cfg!(debug_assertions) {
+                if guard > 2 {
+                    let foo = 10 * 12;
+                    println!("{}", foo);
+                }
             }
         }
     }
@@ -514,41 +527,53 @@ where
         Nb is the number of visits to the parent edge,
         c is "a constant determining the level of exploration".
     */
-    
+
     fn exploration_stimulus(&self, edge: &Edge<Action>, parent_visits: usize) -> f64 {
         let N = parent_visits as f64; // how many times the parent state has been visited
         let n = edge.visit_count as f64 + 1.0f64; // how many times this action has been explored from the parent state
 
         let p = edge.prior as f64; // prior probability that this action is the best available
         let w = edge.wins as i64 - edge.losses as i64;
-        let q = w as f64 / n as f64; 
-        
-        let c = self.options.cpuct as f64;
-        let u = c * p * (N.ln() / n).sqrt();
+        let q = w as f64 / n as f64;
 
+        let c = self.options.cpuct as f64;
+        let u = c * p * (N / n).sqrt();
+        if cfg!(debug_assertions) {
+            if (q + u).is_nan() {
+                warn!("Exploration is NAN! at {:?}", edge);
+            }
+        }
         return q + u;
     }
-    
+
     // We always sample the node that has the highest exploration_stimulus, as described above
-    fn next_node_to_sample(
-        &self,
-        idx: NodeIdx,
-        game_expert: &mut GameExpert<State, Action>,
-    ) -> NodeIdx {
-
+    // Should be next_action_to_sample(?!)
+    fn next_node_to_sample(&self, idx: NodeIdx) -> NodeIdx {
         let parent_visits: usize = self.search_tree[idx].visits;
-            
-        let explorations = self
-            .search_tree
-            .neighbors(idx)
-            .map(|node_idx| {
-                let edge_idx = self.parent_edge_idx(node_idx).unwrap();
-                let edge = &self.search_tree[edge_idx];
-                let exploration_stimulus = self.exploration_stimulus(&edge, parent_visits);
-                (edge_idx, exploration_stimulus)
-            });
 
-        let (idx_with_max_stimulus, _) = explorations.max_by(
+        let explorations = self.search_tree.neighbors(idx).map(|node_idx| {
+            let edge_idx = self.parent_edge_idx(node_idx).unwrap();
+            let edge = &self.search_tree[edge_idx];
+            let exploration_stimulus = self.exploration_stimulus(&edge, parent_visits);
+            (edge_idx, exploration_stimulus)
+        });
+
+        if cfg!(debug_assertions) {
+            let explorations = self.search_tree.neighbors(idx).map(|child_idx| {
+                let edge_idx = self.parent_edge_idx(child_idx).unwrap();
+                let edge = &self.search_tree[edge_idx];
+                let stimulus = self.exploration_stimulus(&edge, parent_visits);
+                (edge_idx, edge, stimulus)
+            });
+            for (e_idx, e, s) in explorations {
+                let (_, node_idx) = self.search_tree.edge_endpoints(e_idx).unwrap();
+                trace!("{:?}\n{:?}: {:?}", e, node_idx, s);
+            }
+        }
+
+        let (idx_with_max_stimulus, _) = explorations
+            .into_iter()
+            .max_by(
                 |&(_, exploration_stimulus_a), &(_, exploration_stimulus_b)| {
                     exploration_stimulus_a
                         .partial_cmp(&exploration_stimulus_b)
@@ -557,7 +582,10 @@ where
             )
             .unwrap();
 
-        let (_, next_node_idx) = self.search_tree.edge_endpoints(idx_with_max_stimulus).unwrap();
+        let (_, next_node_idx) = self
+            .search_tree
+            .edge_endpoints(idx_with_max_stimulus)
+            .unwrap();
         next_node_idx
     }
 
@@ -576,7 +604,9 @@ where
         if !parent_node.is_some() {
             return None;
         }
-        let parent_edge = parent_node.and_then(|parent_idx| self.search_tree.find_edge(parent_idx, idx)).unwrap();
+        let parent_edge = parent_node
+            .and_then(|parent_idx| self.search_tree.find_edge(parent_idx, idx))
+            .unwrap();
         Some((parent_node.unwrap(), parent_edge))
     }
 
@@ -584,20 +614,18 @@ where
     // then back up the tree to the current analysis root (e.g., the state of the game as it has played out thus far),
     // updating win, loss, and visit counts.
     fn read_to_end(&mut self, game_expert: &mut GameExpert<State, Action>) {
-        let self_ptr = self as *mut Self;
-        unsafe {
-            let mut node_idx = (*self_ptr).root_idx;
-            let mut node_weight = &(*self_ptr).search_tree[node_idx];
+        let mut node_idx = self.root_idx;
+        let mut node_weight = &mut self.search_tree[node_idx];
 
-            while node_weight.state.status() == GameStatus::InProgress {
-                if !node_weight.expanded {
-                    self.expand(node_idx, game_expert);
-                }
-                node_idx = self.next_node_to_sample(node_idx, game_expert);
-                node_weight = &(*self_ptr).search_tree[node_idx];
+        while node_weight.state.status() == GameStatus::InProgress {
+            node_weight.visits += 1;
+            if !node_weight.expanded {
+                self.expand(node_idx, game_expert);
             }
-            self.backup(node_idx);
+            node_idx = self.next_node_to_sample(node_idx);
+            node_weight = &mut self.search_tree[node_idx];
         }
+        self.backup(node_idx);
     }
     // record the result of a single readout up to the analysis root, which during normal operation
     // is the node representating the current state of the game as it has evolved so far. In other words,
@@ -611,18 +639,15 @@ where
         };
         let mut loss = match status {
             GameStatus::LastPlayerLost => 1,
-            _ => 0
+            _ => 0,
         };
         let mut node_idx = node_idx;
         loop {
             let parent = self.parent(node_idx);
-            if parent.is_none() {
-                break;
-            }
+            // if parent.is_none() {
+            //     break;
+            // }
             let (parent_node_idx, parent_edge_idx) = parent.unwrap();
-            if parent_node_idx == self.root_idx {
-                break;
-            }
             let parent_edge_weight = self.search_tree.edge_weight_mut(parent_edge_idx).unwrap();
 
             parent_edge_weight.wins += win;
@@ -632,71 +657,60 @@ where
             std::mem::swap(&mut win, &mut loss);
 
             node_idx = parent_node_idx;
+            if node_idx == self.root_idx {
+                break;
+            }
         }
     }
     // For each possible action from the current state (node_idx), create a new node and edge representing the application of that action.
+    // Must not be called if the node's state is terminal
     fn expand(&mut self, node_idx: NodeIdx, game_expert: &mut GameExpert<State, Action>) {
-        {
-            let node = &self.search_tree[node_idx];
-            let state = &node.state;
+        let Hypotheses {
+            mut legal_actions, ..
+        } = game_expert.hypotheses(&self.search_tree[node_idx].state);
 
-            match &state.status() {
-                &GameStatus::InProgress => {}
-                _ => {
-                    return;
-                }
-            }
+        let mut total_probability = 0.0;
+        for (_, p) in &legal_actions {
+            total_probability += p;
         }
-        {
+        let c = self.options.noise_coefficient;
+        let scale = 1.0 / total_probability; // Ok to divide by because at least one action must have non-zero probability
+        let effective_priors: Vec<f32> = if legal_actions.len() > 1 {
+            let dist = Dirichlet::new_with_param(self.options.dirichlet_alpha, legal_actions.len());
+            let sample = dist.sample(&mut rand::thread_rng());
+
+            legal_actions
+                .iter()
+                .zip(sample)
+                .map(|((_, p), n)| ((*p) * scale * (1.0 - c)) + (n as f32 * c))
+                .collect()
+        } else {
+            legal_actions.iter().map(|(_, p)| *p).collect()
+        };
+
+        for (i, (action, raw_prior)) in legal_actions.into_iter().enumerate() {
+            if action.index() > 8 {
+                warn!("Weird action {:?}", action);
+            }
+            let new_state = game_expert.next(&self.search_tree[node_idx].state, &action);
+            let e = self.options.noise_coefficient;
             let self_ptr = self as *mut Self;
-            let Hypotheses {
-                mut legal_actions, ..
-            } = game_expert.hypotheses(&self.search_tree[node_idx].state);
 
-            let mut total_probability = 0.0;
-            for (_, p) in &legal_actions {
-                total_probability += p;
-            }
-            let c = self.options.noise_coefficient;
-            let scale = 1.0 / total_probability; // Ok to divide by because at least one action must have non-zero probability
-            let effective_priors: Vec<f32> = if legal_actions.len() > 1 {
-                let dist =
-                    Dirichlet::new_with_param(self.options.dirichlet_alpha, legal_actions.len());
-                let sample = dist.sample(&mut rand::thread_rng());
+            let leaf_idx = self.search_tree.add_node(Node::new_unexpanded(new_state));
 
-                legal_actions
-                    .iter()
-                    .zip(sample)
-                    .map(|((_, p), n)| ((*p) * scale * (1.0 - c)) + (n as f32 * c))
-                    .collect()
-            } else {
-                legal_actions.iter().map(|(_, p)| *p).collect()
-            };
-
-            for (i, (action, raw_prior)) in legal_actions.into_iter().enumerate() {
-                let new_state = game_expert.next(&self.search_tree[node_idx].state, &action);
-                let e = self.options.noise_coefficient;
-
-                unsafe {
-                    let leaf_idx = (*self_ptr)
-                        .search_tree
-                        .add_node(Node::new_unexpanded(new_state));
-
-                    (*self_ptr).search_tree.add_edge(
-                        node_idx,
-                        leaf_idx,
-                        Edge {
-                            action,
-                            prior: effective_priors[i],
-                            scaled_prior: raw_prior * scale,
-                            raw_prior,
-                            visit_count: 0,
-                            wins: 0,
-                            losses: 0,
-                        },
-                    );
-                }
-            }
+            self.search_tree.add_edge(
+                node_idx,
+                leaf_idx,
+                Edge {
+                    action,
+                    prior: effective_priors[i],
+                    scaled_prior: raw_prior * scale,
+                    raw_prior,
+                    visit_count: 0,
+                    wins: 0,
+                    losses: 0,
+                },
+            );
         }
         self.search_tree.node_weight_mut(node_idx).unwrap().expanded = true;
     }

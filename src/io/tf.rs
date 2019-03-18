@@ -4,7 +4,7 @@ extern crate crc32c;
 use std::io;
 use std::io::prelude::*;
 
-use self::byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, ByteOrder};
+use self::byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 
 // TODO: this is merged into rust-tensorflow now, so delete this and use it from rust-tensorflow
 // (Blocked until they release a new crate version)
@@ -101,7 +101,7 @@ where
                 ),
             ));
         }
-        let crclen : u32 = LittleEndian::read_u32(&crclen_buf);
+        let crclen: u32 = LittleEndian::read_u32(&crclen_buf);
 
         if crclen != masked_crc32(&len_buf) {
             return Err(io::Error::new(
@@ -111,8 +111,9 @@ where
         }
 
         let mut data_buf: Vec<u8> = Vec::with_capacity(len as usize);
-        let mut data_buf: Vec<u8> = Vec::with_capacity(len as usize);
-        unsafe { data_buf.set_len(len as usize); }
+        unsafe {
+            data_buf.set_len(len as usize);
+        }
 
         let data_bytes_read = self.reader.read(&mut data_buf[..])?;
         if (data_bytes_read as u64) < len {
