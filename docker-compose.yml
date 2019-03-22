@@ -15,7 +15,7 @@ services:
         HOST_GID: "${HOST_GID}"
         WHO: "${WHO}"
       context: "."
-      dockerfile: "play/notf.dockerfile"
+      dockerfile: "play/nogpu.dockerfile"
     ports:
       - "5000:5000"
       - "5001:5001"
@@ -28,7 +28,8 @@ services:
       - SERAPHIM_DATA=/data # seraphim binaries read from and write to files in $SERAPHIM_DATA
       - HISTFILE=/bash/play_history
       - SERAPHIM_MODEL_NAME=${SERAPHIM_MODEL_NAME}
-      - CARGO_TARGET_DIR=/target
+      - CARGO_HOME=/rust/cargo
+      - CARGO_TARGET_DIR=/rust/target
       - RUST_BACKTRACE=1
       - RUST_LOG=seraphim,generate_games,hist,interactive,tfrecord_viewer
     working_dir: /seraphim
@@ -36,7 +37,7 @@ services:
     stdin_open: true
     tty: true
     command: /bin/bash
-    # runtime: nvidia
+    runtime: nvidia
     user: "${WHO}"
     # NOTE: The SHMEM allocation limit is set to the default of 64MB.  This may be
     # insufficient for TensorFlow.  NVIDIA recommends the use of the following flags:

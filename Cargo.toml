@@ -22,6 +22,7 @@ protobuf = "*"
 crc32c = "*"
 byteorder = "*"
 fs2 = "*"
+retry = "*"
 # term_grid = "*"
 
 [profile.release]

@@ -1,0 +1,8 @@
+version: "2.3"
+
+services:
+  play:
+    command: cargo run -q --release --bin generate_games
+    depends_on: ['train']
+  train:
+    command: src/tictactoe/train.py

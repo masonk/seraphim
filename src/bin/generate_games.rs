@@ -4,6 +4,7 @@ extern crate alloc_system;
 extern crate clap;
 extern crate flexi_logger;
 extern crate fs2;
+extern crate retry;
 extern crate seraphim;
 
 #[macro_use]
@@ -72,6 +73,7 @@ fn main() {
     let mut overrides = opts.search_tree_options;
     overrides.dirichlet_alpha.get_or_insert(0.6);
     overrides.cpuct.get_or_insert(1.5);
+    overrides.tempering_point.get_or_insert(2);
     let search_tree_options = seraphim::search::SearchTreeOptions::from_overrides(overrides);
 
     let fq_model_dir = format!(
@@ -121,29 +123,38 @@ fn main() {
 
         let writer = ::std::io::BufWriter::new(file);
 
-        let mut ge = match seraphim::tictactoe::DnnGameExpert::from_saved_model(&fq_model_dir) {
-            Ok(ge) => ge,
-            Err(e) => {
-                panic!("Couldn't restore a model from '{}'. \nTry running 'src/tictactoe/train.py --init'\nError:\n{:?}", fq_model_dir,  e);
-            }
-        };
-        let _ = lock.unlock();
-        match do_some_games(
-            &mut ge,
-            opts.games_per_file,
-            writer,
-            &search_tree_options,
-            running.clone(),
+        // It might take a few seconds before the initialized model appears when starting a new training session
+        // - rather than immediately bailling, retry a few times.
+        match retry::retry(
+            5,
+            1000 * 10,
+            || seraphim::tictactoe::DnnGameExpert::from_saved_model(&fq_model_dir),
+            |ge| ge.is_ok(),
         ) {
-            Ok((c, d)) => {
-                count += c;
-                draws += d;
+            Ok(ge) => {
+                let _ = lock.unlock();
+                match do_some_games(
+                    &mut ge.unwrap(),
+                    opts.games_per_file,
+                    writer,
+                    &search_tree_options,
+                    running.clone(),
+                ) {
+                    Ok((c, d)) => {
+                        count += c;
+                        draws += d;
+                    }
+                    Err(err) => {
+                        println!("{:?}", err);
+                        break;
+                    }
+                }
             }
             Err(err) => {
-                println!("{:?}", err);
-                break;
+                panic!("Couldn't restore a model from '{}'. \nTry running 'src/tictactoe/train.py --init'\nError:\n{:?}", fq_model_dir,  err);
             }
-        }
+        };
+
         // changing files in gamedata is potentially racing with training processes that are reading
         // .tfrecord files.
         let mut stale_index = ::std::fs::OpenOptions::new()

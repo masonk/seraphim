@@ -1,7 +1,5 @@
 Priority Queue:
     - Need a way to unify two board states that arrived at by different paths - may be algorithmically important
-    - how to evaluate Q(s,a)?
-    - Why does search favor move 0 over the symmetrical moves 2, 6, 8
     - investigate j-curve in readouts:
         - 100 has more draws than 600
         - it starts going up again around 2000, nearing 100% draws by 10,0000
@@ -10,8 +8,6 @@ Priority Queue:
         - L2 regularization 10e-4
     - add to_win to the hypothesis api
 
-    - Automatically initialize and train a model with one command
-    - fix the bogus model name created when initing a new model
 
     - hardware accelerate inference
         - debug slow inference perf on gpu

@@ -1,0 +1,10 @@
+#!/bin/bash
+
+export HOST_UID=$(id -u)
+export HOST_GID=$(id -g)
+export WHO=$(whoami)
+export SERAPHIM_MODEL_NAME=$1
+shift
+
+docker-compose -f docker-compose.yml -f docker-compose.auto.yml up -d
+docker-compose logs --tail="500" -f

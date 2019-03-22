@@ -1,5 +1,8 @@
 Rust Best Practices
 
+#1:
+    Follow the API guidelines at https://rust-lang-nursery.github.io/api-guidelines/about.html
+
 - Style
     - Don't panic!:
         There is almost never a reason to panic from a library in Rust. When you panic, you take control away from your caller.
@@ -9,7 +12,7 @@ Rust Best Practices
         Almost all public operations in an API should return a Result, even if the operation cannot presently fail.
         It's easy for a caller to unwrap a Result, but once an API exposes a raw T, it's hard to change it to a Result<T>.
         Backwards compatibility with a public API that exposes a raw types is the greatest tempation for violating guideline #1.
-        Be defensive and always return Results from public APIs.  This is extremely easy to do when using error_chain; see below.
+        Be defensive and always return Results from public APIs.  This is extremely easy to do when using the failure crate; see below.
     - Don't import *:
         Optimize for readability rather than writeability. When reading code, it's useful to see exactly which types are imported from another crate. 
         It's especially useful to have this information readily available when trying to remove a crate dependency.
@@ -34,7 +37,6 @@ Rust Best Practices
 
 
 
-    
 
 - Always use these standard crates:
     - log
@@ -43,10 +45,12 @@ Rust Best Practices
         https://github.com/rust-lang-nursery/log/blob/master/rfcs/0296-structured-logging.md
     - serde:
         Use serde for all data serialization needs. Doing so makes your types compatible with 
-    - error_chain:
-        All libraries should expose Errors via error_chain from the start. It's just as easy to write error_chain Errors as ad-hoc errors,
+    - failure:
+        All libraries should expose Errors via failure from the start. It's just as easy to write error_chain Errors as ad-hoc errors,
         and doing so makes it easy to deal with the errors as structured data.
-        https://brson.github.io/2016/11/30/starting-with-error-chain
+        https://github.com/rust-lang-nursery/failure
+        https://boats.gitlab.io/blog/post/2017-11-16-announcing-failure/
+        
     - struct_opt:
         If your library needs configuration, the best practice is to expose an options struct that derives structopt. This allows consuming binaries
         to compose your options configuration into their argument parsing.
