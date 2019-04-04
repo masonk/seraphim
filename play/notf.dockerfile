@@ -25,6 +25,8 @@ RUN set -eux; \
     libfreeimage-dev \
     # These two packages allow a TF to be built that run on multiple GPUs
     # libnccl2 libnccl-dev \
+    # for `perf`
+    linux-tools-generic \
     # Seraphim depends on libssl via the openssl-sys crate (which I think is a transitive dep of ctrlc)
     libssl-dev \ 
     # debugger

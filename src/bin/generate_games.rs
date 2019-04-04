@@ -71,9 +71,9 @@ fn main() {
     let opts = Config::from_args();
     let config = opts.seraphim_config;
     let mut overrides = opts.search_tree_options;
-    overrides.dirichlet_alpha.get_or_insert(0.6);
-    overrides.cpuct.get_or_insert(1.5);
-    overrides.tempering_point.get_or_insert(2);
+    overrides.dirichlet_alpha.get_or_insert(0.5);
+    overrides.cpuct.get_or_insert(1.0);
+    overrides.tempering_point.get_or_insert(1);
     let search_tree_options = seraphim::search::SearchTreeOptions::from_overrides(overrides);
 
     let fq_model_dir = format!(

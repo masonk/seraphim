@@ -2,7 +2,7 @@ version: "2.3"
 
 services:
   play:
-    command: cargo run -q --release --bin generate_games
+    command: cargo run -q --release --bin generate_games -- --tempering_point 2
     depends_on: ['train']
   train:
-    command: src/tictactoe/train.py
+    command:  src/tictactoe/train.py

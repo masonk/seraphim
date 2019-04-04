@@ -23,6 +23,7 @@ RUN set -eux; \
     # libnccl2 libnccl-dev \
     # Seraphim depends on libssl via the openssl-sys crate (which I think is a transitive dep of ctrlc)
     libssl-dev \ 
+    linx-tools-generic \
     lldb-7 \
     gdbserver \
     make \

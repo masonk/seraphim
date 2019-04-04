@@ -30,27 +30,27 @@ It operates over this file structure:
 
 /gamedata/                        [6]
     0.tfrecord                    [7]
-    1.tfrecord                
+    1.tfrecord
     control                       [8]
     2                             [9]
     stale_files                   [10]
 /models/
-    foo/                          [1]   
+    foo/                          [1]
         champion/                 [2]
-            checkpoints/          [3] 
+            checkpoints/          [3]
             saved_model/          [4]
         2018-08-13T23:11:51-0/    [5]
-            checkpoints/        
-            saved_model/          
+            checkpoints/
+            saved_model/
 
-[1]: A model dir. Every model has a name, and corresponds to a particular configuration of neural network.  
+[1]: A model dir. Every model has a name, and corresponds to a particular configuration of neural network.
     Each directory in a model is a snapshot of the model at particular point in time.
 [2]: 'champion' is a special snapshot, that corresponds to the current best-known player. A separate process continually
      compares snapshots to each other in an eternal tournament. Periodically, the frontrunner of the tournament is upgraded
      to the champion, and training resumes from the champion.
 [3]: The metagraph of a snapshot. This is a serialization of the model suitable for resuming training. Files
     in this directory are written and consumed by the Tensorflow framework.
-[4]: The SavedModel of a snapshot. This is a serialization of the model suitable for inference ("serving"), 
+[4]: The SavedModel of a snapshot. This is a serialization of the model suitable for inference ("serving"),
     but it can't easily be resumed for training. Files in this directory are written and consumed by the TensorFlow framework.
 [5]: Snapshots, other than the special "champion", are named according to the date and time when they were created, followed
     by the global_step of the model (i.e., the number of minibatches of training that the model has experienced).
@@ -58,7 +58,7 @@ It operates over this file structure:
     the first of which is the state of the board, and the second is the probability distribution over possible actions. (pi,
     in the paper).
 [7]: game records are saved in the TFRecord format by seraphim. train.py will form its dataset from all files in the directory.
-[8]: control file contains metadata about game records. It is used for the correct rotation of game files. At any point in 
+[8]: control file contains metadata about game records. It is used for the correct rotation of game files. At any point in
     time, only the 50 most .tfrecord files will be present in gamedata.
 [9]: while a new tfrecord is in progress, it will not be suffixed with .tfrecord, and should not be trained from. It is not
     guaranteed to be a valid tfrecord.
@@ -90,7 +90,7 @@ model_dir = seraphim_data + "/models/" + model_name
 dataset_dir = seraphim_data + "/gamedata/" + model_name
 
 # save a new SavedModel to compete in the eternal tournament after running through this many epochs of training
-snapshot_epochs = 2500
+snapshot_epochs = 100
 minibatch_size = 2048
 dense_layers = 5
 # take training examples (stored in TFRecord format) from files in this directory:
@@ -148,8 +148,7 @@ def make_dataset(minibatch, dataset_dir):
 
     dataset = dataset.shuffle(buffer_size=10000)
     # dataset = dataset.repeat(1)
-    dataset = dataset.apply(
-        tf.contrib.data.batch(minibatch_size, drop_remainder=True))
+    dataset = dataset.batch(minibatch_size, drop_remainder=True)
 
     return dataset
 
