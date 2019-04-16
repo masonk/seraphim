@@ -9,15 +9,7 @@ use rand::prelude::*;
 use std::collections::HashMap;
 use std::time;
 use structopt;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum GameStatus {
-    InProgress,
-    NullResult,
-    Draw,
-    LastPlayerWon,
-    LastPlayerLost,
-}
+use crate::game::GameStatus;
 
 #[derive(Debug)]
 pub struct Hypotheses<Action> {
