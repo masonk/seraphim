@@ -18,10 +18,12 @@ pub enum GameStatus {
     LastPlayerWon,
     LastPlayerLost,
 }
+
 #[derive(Debug)]
 pub struct Hypotheses<Action> {
-    pub legal_actions: Vec<(Action, f32)>,
-    pub to_win: f32,
+    pub actions: Vec<Action>,
+    pub priors: Vec<f32>,
+    pub q: f32,
 }
 
 #[derive(Debug)]
@@ -207,7 +209,7 @@ pub struct SearchTreeParamOverrides {
     )]
     pub tempering_point: Option<u32>,
 
-    #[structopt(long, help = "Noise coefficient for Dirichlet noise.")]
+    #[structopt(long, help = "Noise coefficient for Dirichlet noise (what fraction of probability is from Dir(a)).")]
     pub noise_coefficient: Option<f32>,
 
     #[structopt(

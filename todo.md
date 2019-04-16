@@ -1,7 +1,36 @@
 Priority Queue:
-    - apply tempering to subsequent plies when searching subsequent moves after early moves
+    - batching inferences 
+        - A separate thread that batches inferences on a 1-10ms timeout
+        - State implements Hash and we cache the result of inferences
+        - 128-1024 tasks, each running its own game, on a threadpool
+        - Use Actix, InferenceBatcher is an Actor, spawn 1024 "play a game" tasks on a threadpool
     - too much Dirichlet?
-    - add to_win to the hypothesis api
+    - Game API v2:
+        - separate Expert from Game
+        - Automatically implement GameExpert for game and make generate_games work for any game
+        pub struct Hypotheses<Action> {
+            pub actions: Vec<Action>,
+            pub priors: Vec<f32>,
+            pub q: f32,
+        }
+        struct TrainingExample<S, A> {
+            state: S,
+            hypotheses: Hypotheses<A>
+            q: f32
+        }
+
+        trait Game<S, A> {
+            symmetries(&TrainingExample<S>) -> Vec<TrainingExample<S>>
+        }
+
+        State and Action implement Serialize, Deserialize to the format used in training
+
+        - 
+    - Fill in q values at the end of the game
+    - Emit all symmmetries of a game as examples
+
+
+
     - lift as much logic as possible into seraphim core
         - Librarize the Python half that all lives in train.py atm
     - tfrecord proto gencode should be in core
@@ -9,8 +38,7 @@ Priority Queue:
     - benchmarks
         - profile performance
         - triage performance
-    - implement a model evaluator (eternal tournamnent)
-    - Need a way to unify two board states that arrived at by different paths - may be algorithmically important
+
     - investigate j-curve in readouts:
         - 100 has more draws than 600
         - it starts going up again around 2000, nearing 100% draws by 10,0000

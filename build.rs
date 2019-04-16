@@ -6,7 +6,6 @@ extern crate log;
 fn init_logger() {
     flexi_logger::Logger::with_env()
         // .format(|record: &flexi_logger::Record| format!("{}", &record.args()))
-        .o_duplicate_info(true)
         .start()
         .unwrap();
 }

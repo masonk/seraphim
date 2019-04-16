@@ -38,7 +38,10 @@ fn init_logger() {
 }
 // Generate new games of self-play from the champion of named model
 #[derive(Debug, StructOpt, Clone)]
-#[structopt(name = "interactive", about = "An interactive session of Tic Tac Toe.")]
+#[structopt(
+    name = "generate_games",
+    about = "Generate games of Tic Tac Toe for deep learning."
+)]
 struct Config {
     #[structopt(long, default_value = "100", help = "How many games in each tfrecord?")]
     games_per_file: i64,

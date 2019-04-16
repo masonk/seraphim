@@ -1,5 +1,6 @@
 extern crate byteorder;
 extern crate crc32c;
+extern crate fallible_iterator;
 
 use std::io;
 use std::io::prelude::*;
@@ -144,5 +145,63 @@ where
         }
 
         Ok(Some(data_buf))
+    }
+}
+
+impl<R> IntoIterator for RecordReader<R>
+where
+    R: Read,
+{
+    type Item = <self::RecordIter<R> as Iterator>::Item;
+    type IntoIter = RecordIter<R>;
+    fn into_iter(self) -> Self::IntoIter {
+        RecordIter { reader: self }
+    }
+}
+
+impl<R> fallible_iterator::IntoFallibleIterator for RecordReader<R> 
+where R: Read,
+{    
+    type IntoFallibleIter = FallibleRecordIter<R>;
+    type Item = <self::FallibleRecordIter<R> as fallible_iterator::FallibleIterator>::Item;
+    type Error = <self::FallibleRecordIter<R> as fallible_iterator::FallibleIterator>::Error;
+    fn into_fallible_iter(self) -> FallibleRecordIter<R> {
+        FallibleRecordIter {
+            reader: self,
+        }
+    }
+}
+
+pub struct FallibleRecordIter<R> where R: Read {
+    reader: RecordReader<R>
+}
+impl<R> fallible_iterator::FallibleIterator for FallibleRecordIter<R> where R: Read{
+    type Item = Vec<u8>;
+    type Error = io::Error;
+    fn next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
+        self.reader.read_one()
+    }
+}
+
+pub struct RecordIter<R>
+where
+    R: Read,
+{
+    reader: RecordReader<R>,
+}
+impl<R> Iterator for RecordIter<R>
+where
+    R: Read,
+{
+    type Item = io::Result<Vec<u8>>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let res = self.reader.read_one();
+        match res {
+            Err(e) => Some(Err(e)),
+            Ok(res) => match res {
+                Some(r) => Some(Ok(r)),
+                None => None,
+            },
+        }
     }
 }
