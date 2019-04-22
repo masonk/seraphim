@@ -1,8 +1,8 @@
 // Types that represent the state of a game of tic tac toe
 
+use crate::{game, game::GameStatus};
 use std::fmt;
 use tensorflow as tf;
-use crate::{game, game::GameStatus};
 
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub enum MoveError {
@@ -296,5 +296,4 @@ impl crate::game::GameState for State {
 
         vec
     }
-
 }

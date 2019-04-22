@@ -5,11 +5,7 @@
 use petgraph;
 use rand::distributions::{Dirichlet, Distribution, Uniform};
 
-use crate::{
-    game,
-    game::GameStatus,
-    inference
-};
+use crate::{game, game::GameStatus, inference};
 use std::{collections::HashMap, default::Default, time};
 
 use crate::error::Result;
@@ -188,7 +184,6 @@ impl SearchTreeOptions {
     }
 }
 
-
 #[derive(Debug)]
 pub struct SearchTree<Inference, State, Game>
 where
@@ -247,7 +242,6 @@ where
     pub fn action_count(&self) -> usize {
         self.game.action_count()
     }
-
 
     // Read the next move and return the result without applying.
     // Note: This call will typically be followed by apply() or apply_search_results()

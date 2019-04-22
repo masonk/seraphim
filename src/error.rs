@@ -46,4 +46,3 @@ pub enum SearchError {
     #[fail(display = "Unspecified error when searching:\n{}", msg)]
     Unspecified { msg: String, backtrace: Backtrace },
 }
-
