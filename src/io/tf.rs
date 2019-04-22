@@ -78,7 +78,7 @@ where
          */
         let mut len_buf: [u8; 8] = [0; 8];
         let len_bytes_read = self.reader.read(&mut len_buf)?;
-        if (len_bytes_read == 0) {
+        if len_bytes_read == 0 {
             return Ok(None);
         } else if len_bytes_read < 8 {
             return Err(io::Error::new(

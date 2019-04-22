@@ -12,9 +12,11 @@ features = ["max_level_trace", "release_max_level_error"]
 version = "0.4"
 
 [dependencies]
+bincode = "*"
 byteorder = "*"
 clap = "*"
 crc32c = "*"
+failure = "*"
 fallible-iterator = "*"
 flexi_logger = "*"
 fs2 = "*"
@@ -39,6 +41,10 @@ version = "*"
 [dependencies.log]
 features = ["max_level_trace", "release_max_level_error"]
 version = "0.4"
+
+[dependencies.serde]
+features = ["derive"]
+version = "1.0"
 
 [dependencies.tensorflow]
 version = "0.12.0"
