@@ -6,6 +6,7 @@ Seraphim is a Rust library that efficiently solves the multiarmed bandit problem
 Users implement Game[1] and Inference[2] and pass instances of those traits to Generate (for reinforcement learning) or Interactive (for a human to play a game against the computer).
 
 [1] https://github.com/masonk/seraphim/blob/master/src/game.rs
+
 [2] https://github.com/masonk/seraphim/blob/master/src/inference.rs
 
 ## The Reinforcement Learning Cycle
