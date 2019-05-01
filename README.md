@@ -1,6 +1,6 @@
 # Seraphim, an Alpha Zero-style game AI
 
-Seraphim is a Rust library that efficiently solves the multiarmed bandit problem by exploring a search tree (such as a game tree) using the PUCT algorithm described in the original Alpha Go paper. The PUCT algorithm relies upon an expert policy (the `GameExpert`), that, given an abstract game state (a `State`) can ascribe probabilities (or logits) to actions (`Action`) that are likely to be better.  Typically, the expert policy will be implemented as a machine learning model, such as a DNN (Deep Neural Network).
+Seraphim is a Rust library that efficiently solves the multiarmed bandit problem by exploring a search tree (such as a game tree) using the PUCT algorithm described in the original Alpha Go paper. The PUCT algorithm relies upon an expert policy (the `Inference`), that, given an abstract game state (a `serpahim::game::GameState`) can ascribe probabilities (or logits) to all possible actions (represented as `usize`).  Typically, the expert policy will be implemented as a machine learning model, such as a DNN (Deep Neural Network), but Seraphim is formally agnostic to this. Seraphim provides a reference implementation of `Inference` that is constructed from a Tensorflow SavedModel directory, and aspires to efficiently utilize the GPU and available CPU cores during search - but doesn't yet.
 
 ## TL;DR
 Users implement Game[1] and Inference[2] and pass instances of those traits to Generate (for reinforcement learning) or Interactive (for a human to play a game against the computer).
