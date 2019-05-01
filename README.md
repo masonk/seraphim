@@ -27,11 +27,7 @@ of the best moves that it found. This record is a training example for the exper
 trains itself to be more like the results of search, and the improved model is fed back to Seraphim
 for subsequent searches.
 
-Seraphim provides the searching. Your job as a consumer of Seraphim is to provide the expert policy.  
-
-The expert is abstracted by the `seraphim::search::GameExpert` trait. Implementations of the game expert are likely to use ML models to produce the required hypotheses, and the interface is designed with this use-case in mind, though strictly speaking, core seraphim does not know about ML models, and simply requires any implementation of a GameExpert in order to perform its search. In the paper, and in the included Tic Tac Toe example, the model is a fully connected DNN of customizable depth, written in TensorFlow.
-
-Meanwhile, the GameExpert does know the rules of the game it is playing, and ascribes prior beliefs about the quality of possibles moves. It  is abstract over game state (S) and the possible game actions (A). Search does not know the rules of the game it is playing; it simply samples availables actions with reference to the probablity that the expert model ascribes to them.
+Seraphim provides the searching. Your job as a consumer of Seraphim is to provide the description of the game's rules and an expert policy to use during search.
 
 ## Installing Core Seraphim
 
