@@ -32,9 +32,9 @@ Seraphim provides the searching. Your job as a consumer of Seraphim is to provid
 
 ## The PUCT algorithm
 
-For a given game state s, the PUCT algorithm takes a fixed number of samples  of the available actions (1600 in the paper; configurable in Seraphim by changing `search::SearchTreeOptions::readouts`). For each action it samples, a new state is generated, and applies the same logic again from this new state, recursively, until it reaches a terminal state.
+For a given game state s, the PUCT algorithm takes a fixed number of samples  of the available actions (1600 in the paper; configurable in Seraphim by changing `search::SearchTreeOptions::readouts`). For each action it samples, it will finish the game by playing one possible successor action until it reaches a terminal state.
 
-When PUCT reaches a terminal state, it scores the game, and updates action values for every (state, action) pair that was visited on the way to the terminal state. In this way, the algorithm effectively plays 1600 games to the end each time it is asked to chose a action, always tending to favor better actions. It then choses to play the action it sampled most often in its search, subject to some noise in early actions, designed to produce variations in its play. You can customize the ply on which AGZ cools down its search by changing `search::SearchTreeOptions::tempering_point`. 
+When PUCT reaches a terminal state, it scores the game, and updates action values for every (state, action) pair that was visited on the way to the terminal state. In this way, the algorithm plays 1600 games to the end each time it is asked to chose a action, always tending to favor better actions. It then choses to play the action it sampled most often in its search, subject to some noise in early actions, designed to produce variations in its play. You can customize the ply on which AGZ cools down its search by changing `search::SearchTreeOptions::tempering_point`. 
 
 ### Chosing the next action to sample
 
